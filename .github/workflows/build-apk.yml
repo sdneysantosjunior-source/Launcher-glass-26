@@ -1,38 +1,287 @@
-name: Build Launcher Glass Android TV APK
+name: Compilar Launcher Glass 26 APK
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build:
+  build-apk:
+    name: Construir Launcher-glass-26.apk
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Source Code
+      - name: Baixar Código Fonte
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Instalar Dependências do Web App
+        run: npm install --legacy-peer-deps
 
-      - name: Build Web App
+      - name: Compilar Frontend Vite (dist)
         run: npm run build
 
-      - name: Setup Java JDK
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build Android APK
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Gerar Projeto Android TV WebView
         run: |
-          echo "Building Launcher-glass-26 native APK for Android TV..."
+          mkdir -p android/app/src/main/java/com/sdneysantos/launcherglass
+          mkdir -p android/app/src/main/res/values
+          mkdir -p android/app/src/main/res/drawable
+          mkdir -p android/app/src/main/assets
+
+          # Copiar a build da launcher para os assets do app Android
+          cp -r dist/* android/app/src/main/assets/
+
+          # Criar gradle root
+          cat << 'EOF' > android/settings.gradle
+          rootProject.name = 'LauncherGlass26'
+          include ':app'
+          EOF
+
+          cat << 'EOF' > android/build.gradle
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.2.2'
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
+
+          # Criar app/build.gradle
+          cat << 'EOF' > android/app/build.gradle
+          apply plugin: 'com.android.application'
+
+          android {
+              namespace 'com.sdneysantos.launcherglass'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.sdneysantos.launcherglass"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      signingConfig signingConfigs.debug
+                  }
+                  debug {
+                      minifyEnabled false
+                  }
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'androidx.webkit:webkit:1.9.0'
+          }
+          EOF
+
+          # Criar AndroidManifest.xml com suporte oficial a Android TV e Launcher Home
+          cat << 'EOF' > android/app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@drawable/ic_launcher"
+                  android:banner="@drawable/ic_launcher"
+                  android:label="Launcher Glass 26"
+                  android:theme="@style/Theme.FullScreen"
+                  android:hardwareAccelerated="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="landscape"
+                      android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize">
+                      
+                      <!-- Torna o app a Launcher padrão (Home) da TV -->
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.HOME" />
+                          <category android:name="android.intent.category.DEFAULT" />
+                      </intent-filter>
+
+                      <!-- Ícone no menu de aplicativos e Leanback Android TV -->
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          # Criar Theme full screen sem barra
+          cat << 'EOF' > android/app/src/main/res/values/styles.xml
+          <resources>
+              <style name="Theme.FullScreen" parent="Theme.AppCompat.NoActionBar">
+                  <item name="android:windowNoTitle">true</item>
+                  <item name="android:windowActionBar">false</item>
+                  <item name="android:windowFullscreen">true</item>
+                  <item name="android:windowContentOverlay">@null</item>
+                  <item name="android:windowBackground">#050711</item>
+              </style>
+          </resources>
+          EOF
+
+          # Criar icone básico
+          cat << 'EOF' > android/app/src/main/res/drawable/ic_launcher.xml
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#06b6d4"
+                  android:pathData="M20,20h68v68h-68z"/>
+          </vector>
+          EOF
+
+          # Criar MainActivity.java que carrega os assets locais e mapeia o controle remoto D-pad
+          cat << 'EOF' > android/app/src/main/java/com/sdneysantos/launcherglass/MainActivity.java
+          package com.sdneysantos.launcherglass;
+
+          import android.annotation.SuppressLint;
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Bundle;
+          import android.view.KeyEvent;
+          import android.view.View;
+          import android.view.WindowManager;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          public class MainActivity extends Activity {
+              private WebView webView;
+
+              @Override
+              @SuppressLint("SetJavaScriptEnabled")
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  // Tela cheia imersiva para TV
+                  getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                  getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+                  webView = new WebView(this);
+                  setContentView(webView);
+
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setDatabaseEnabled(true);
+                  settings.setAllowFileAccess(true);
+                  settings.setAllowContentAccess(true);
+                  settings.setMediaPlaybackRequiresUserGesture(false);
+                  settings.setLoadsImagesAutomatically(true);
+
+                  // Aceleração de hardware e foco do D-Pad do controle
+                  webView.setFocusable(true);
+                  webView.setFocusableInTouchMode(true);
+                  webView.requestFocus();
+
+                  webView.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                          String url = request.getUrl().toString();
+                          if (url.startsWith("file:///android_asset/")) {
+                              return false;
+                          }
+                          try {
+                              Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                              startActivity(intent);
+                              return true;
+                          } catch (Exception e) {
+                              return false;
+                          }
+                      }
+                  });
+
+                  webView.setWebChromeClient(new WebChromeClient());
+
+                  // Carregar a Launcher Glass dos arquivos locais embutidos
+                  webView.loadUrl("file:///android_asset/index.html");
+              }
+
+              @Override
+              public boolean onKeyDown(int keyCode, KeyEvent event) {
+                  // Controle remoto TV Stick
+                  if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
+                      webView.goBack();
+                      return true;
+                  }
+                  return super.onKeyDown(keyCode, event);
+              }
+          }
+          EOF
+
+      - name: Compilar APK Android
+        run: |
+          cd android
+          gradle assembleRelease --no-daemon
+
+      - name: Renomear e Preparar APK Final
+        run: |
+          mkdir -p output
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk output/Launcher-glass-26.apk || cp android/app/build/outputs/apk/release/*.apk output/Launcher-glass-26.apk || cp android/app/build/outputs/apk/*/*/*.apk output/Launcher-glass-26.apk
+
+      - name: Salvar APK como Artefato do GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: Launcher-glass-26
+          path: output/Launcher-glass-26.apk
+          if-no-files-found: error
+
+      - name: Criar Release com o APK para Download Direto via Termux
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/main')
+        with:
+          tag_name: v1.0.0
+          name: "Launcher Glass 26 - v1.0.0"
+          body: "APK nativo oficial da Launcher Glass 26 para Century TV Stick (Android TV)"
+          files: output/Launcher-glass-26.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -47,15 +47,15 @@ export const TermuxQuickStart: React.FC = () => {
           </div>
 
           <div className="font-mono text-xs text-cyan-300 whitespace-pre overflow-x-auto select-all bg-black/60 p-3 rounded-lg border border-slate-800 leading-relaxed">
-{`# 1. Baixar o APK direto no Termux (11 MB):
-curl -L -o launcher.apk "https://github.com/spocky/miproja1/releases/download/4.72/ProjectivyLauncher-4.72-c97-xda-release.apk"
+{`# 1. Baixar o APK da Launcher Glass 26 (do seu repositório no GitHub):
+curl -L -o Launcher-glass-26.apk "https://github.com/sdneysantosjunior-source/Launcher-glass-26/releases/download/v1.0.0/Launcher-glass-26.apk"
 
-# 2. Conectar e Instalar o APK na TV Century:
+# 2. Conectar e Instalar o APK na TV Century (IP 192.168.0.117):
 adb connect 192.168.0.117:5555
-adb install -r launcher.apk
+adb install -r Launcher-glass-26.apk
 
-# 3. Abrir a Launcher imediatamente na TV:
-adb shell monkey -p com.spocky.projengmenu 1
+# 3. Abrir a Launcher Glass 26 imediatamente na TV:
+adb shell monkey -p com.sdneysantos.launcherglass 1
 
 # 4. Desativar a Launcher pesada antiga e anúncios da TV:
 adb shell pm disable-user --user 0 com.google.android.tvlauncher
@@ -72,7 +72,7 @@ adb shell setprop persist.sys.purgeable_assets 1`}
           </div>
 
           <button
-            onClick={() => copyToClipboard(`curl -L -o launcher.apk "https://github.com/spocky/miproja1/releases/download/4.72/ProjectivyLauncher-4.72-c97-xda-release.apk" && adb connect 192.168.0.117:5555 && adb install -r launcher.apk && adb shell monkey -p com.spocky.projengmenu 1 && adb shell pm disable-user --user 0 com.google.android.tvlauncher && adb shell pm disable-user --user 0 com.google.android.tvrecommendations && adb shell pm disable-user --user 0 com.google.android.videos && adb shell pm disable-user --user 0 com.google.android.play.games && adb shell pm disable-user --user 0 com.google.android.feedback && adb shell settings put global window_animation_scale 0.5 && adb shell settings put global transition_animation_scale 0.5 && adb shell settings put global animator_duration_scale 0.5 && adb shell setprop persist.sys.purgeable_assets 1`, 888)}
+            onClick={() => copyToClipboard(`curl -L -o Launcher-glass-26.apk "https://github.com/sdneysantosjunior-source/Launcher-glass-26/releases/download/v1.0.0/Launcher-glass-26.apk" && adb connect 192.168.0.117:5555 && adb install -r Launcher-glass-26.apk && adb shell monkey -p com.sdneysantos.launcherglass 1 && adb shell pm disable-user --user 0 com.google.android.tvlauncher && adb shell pm disable-user --user 0 com.google.android.tvrecommendations && adb shell pm disable-user --user 0 com.google.android.videos && adb shell pm disable-user --user 0 com.google.android.play.games && adb shell pm disable-user --user 0 com.google.android.feedback && adb shell settings put global window_animation_scale 0.5 && adb shell settings put global transition_animation_scale 0.5 && adb shell settings put global animator_duration_scale 0.5 && adb shell setprop persist.sys.purgeable_assets 1`, 888)}
             className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold px-4 py-2.5 rounded-lg text-xs sm:text-sm transition cursor-pointer shadow-md shadow-cyan-500/20"
           >
             {copiedIndex === 888 ? (
