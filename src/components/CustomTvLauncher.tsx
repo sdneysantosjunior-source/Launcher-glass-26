@@ -1,67 +1,128 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  Tv, 
-  Search, 
-  Wifi, 
-  Home, 
-  Grid, 
-  Film, 
-  Tv2, 
-  Gamepad2, 
-  Music2, 
-  Settings, 
-  Play, 
-  Maximize2, 
-  Minimize2, 
-  ChevronRight, 
-  Monitor, 
+import {
+  Search,
+  Wifi,
+  Home,
+  Grid,
+  Film,
+  Tv2,
+  Gamepad2,
+  Music2,
+  Settings,
+  Play,
+  Maximize2,
+  Minimize2,
+  ChevronRight,
+  ChevronLeft,
+  Monitor,
   Sparkles,
   Volume2,
   VolumeX,
-  X
+  X,
+  Gamepad,
+  CheckCircle2,
+  Cpu,
+  Radio
 } from 'lucide-react';
 
 interface CustomTvLauncherProps {
   onOpenTermuxGuide?: () => void;
+  defaultFullscreen?: boolean;
 }
 
-export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenTermuxGuide }) => {
+interface AppItem {
+  id: string;
+  name: string;
+  label: string;
+  packagesCsv: string;
+  category: 'all' | 'filmes' | 'tv' | 'jogos' | 'musica';
+  bgGradient: string;
+  accentGlow: string;
+  description: string;
+  renderLogo: () => React.ReactNode;
+}
+
+interface ContinueItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  provider: string;
+  packagesCsv: string;
+  providerBadgeClass: string;
+  progress: number;
+  bgGradient: string;
+  accentColor: string;
+  durationRestante: string;
+}
+
+export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({
+  onOpenTermuxGuide,
+  defaultFullscreen = false,
+}) => {
   // Clock & Date state
   const [timeStr, setTimeStr] = useState('20:35');
   const [dateStr, setDateStr] = useState('Seg, 26 de Maio');
 
-  // Active dock menu
+  // Active dock category ('inicio', 'apps', 'filmes', 'tv', 'jogos', 'musica', 'config')
   const [activeDock, setActiveDock] = useState<string>('inicio');
 
-  // Fullscreen state
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  // Fullscreen mode (automatic on TV APK)
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(defaultFullscreen);
 
-  // Sound toggle (Web Audio API synthetic click sound for TV remote feedback)
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  // Show/hide virtual remote simulator on screen
+  const [showVirtualRemote, setShowVirtualRemote] = useState<boolean>(false);
 
-  // Carousel current index (0 to 4)
-  const [carouselIndex, setCarouselIndex] = useState(0);
+  // Sound toggle (Web Audio API click sound for TV remote feedback)
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
 
-  // Active notification toast
+  // Hero Carousel index (0 to 4)
+  const [carouselIndex, setCarouselIndex] = useState<number>(0);
+
+  // Toast message
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // App drawer modal
-  const [isAppDrawerOpen, setIsAppDrawerOpen] = useState(false);
+  // Modals state
+  const [isAppDrawerOpen, setIsAppDrawerOpen] = useState<boolean>(false);
+  const [drawerFocusIdx, setDrawerFocusIdx] = useState<number>(0);
+  const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [activePlayerModal, setActivePlayerModal] = useState<{
+    title: string;
+    subtitle: string;
+    provider: string;
+    packagesCsv: string;
+    progress?: number;
+  } | null>(null);
 
-  // Focus Navigation state
-  // Section types: 'dock', 'hero', 'weather', 'hdmi', 'apps', 'continue'
-  const [focusedId, setFocusedId] = useState<string>('app-0'); // starts on Netflix
+  // Focus Navigation ID
+  const [focusedId, setFocusedId] = useState<string>('app-0');
 
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // Audio Context for synthetic TV remote feedback sound
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const toastTimeoutRef = useRef<number | null>(null);
 
-  const playNavigationSound = useCallback(() => {
+  useEffect(() => {
+    if (defaultFullscreen) {
+      setIsFullscreen(true);
+    }
+  }, [defaultFullscreen]);
+
+  const triggerToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+    }
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setToastMessage(null);
+    }, 3200);
+  }, []);
+
+  const playNavigationSound = useCallback((freq = 560) => {
     if (!soundEnabled) return;
     try {
       if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        audioCtxRef.current = new AudioContextClass();
       }
       const ctx = audioCtxRef.current;
       if (ctx.state === 'suspended') {
@@ -70,600 +131,922 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenTermux
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(580, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(320, ctx.currentTime + 0.05);
-      gain.gain.setValueAtTime(0.04, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.55, ctx.currentTime + 0.045);
+      gain.gain.setValueAtTime(0.035, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.045);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
-      osc.stop(ctx.currentTime + 0.05);
+      osc.stop(ctx.currentTime + 0.045);
     } catch {
-      // AudioContext unavailable or blocked
+      // Ignore audio block before first interaction
     }
   }, [soundEnabled]);
 
-  // Update clock every second
+  // Update real-time clock
   useEffect(() => {
-    const updateTime = () => {
+    const updateClock = () => {
       const now = new Date();
-      setTimeStr(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      setTimeStr(now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
       const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-      const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+      const months = [
+        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+      ];
       setDateStr(`${days[now.getDay()]}, ${now.getDate()} de ${months[now.getMonth()]}`);
     };
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
+    updateClock();
+    const interval = setInterval(updateClock, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  // Carousel auto-advance
+  // Auto-advance Hero Banner carousel
   useEffect(() => {
+    if (activePlayerModal || isAppDrawerOpen || isSearchOpen) return;
     const timer = setInterval(() => {
       setCarouselIndex((prev) => (prev + 1) % 5);
-    }, 6000);
+    }, 6500);
     return () => clearInterval(timer);
-  }, []);
+  }, [activePlayerModal, isAppDrawerOpen, isSearchOpen]);
 
-  const triggerToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
+  // Auto-scroll focused item into view on TV
+  useEffect(() => {
+    const el = document.getElementById(`tv-focus-${focusedId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    }
+  }, [focusedId]);
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      containerRef.current?.requestFullscreen().catch(() => {});
+      containerRef.current?.requestFullscreen?.().catch(() => {});
       setIsFullscreen(true);
     } else {
-      document.exitFullscreen().catch(() => {});
-      setIsFullscreen(false);
+      document.exitFullscreen?.().catch(() => {});
+      if (!defaultFullscreen) {
+        setIsFullscreen(false);
+      }
     }
-  };
+  }, [defaultFullscreen]);
 
-  // Carousel slides data
+  // Native Android TV Launcher Bridge + Simulator Player Fallback
+  const launchNativeOrSimulate = useCallback(
+    (title: string, subtitle: string, provider: string, packagesCsv: string, progress?: number) => {
+      const bridge = (window as unknown as {
+        AndroidTV?: {
+          launchApp?: (pkgs: string) => boolean;
+          openSettings?: () => void;
+          openWifiSettings?: () => void;
+        };
+      }).AndroidTV;
+
+      if (bridge && typeof bridge.launchApp === 'function') {
+        const launched = bridge.launchApp(packagesCsv);
+        if (launched) {
+          triggerToast(`Abrindo ${provider} na Century TV Stick...`);
+          return;
+        }
+      }
+
+      // Open Interactive TV Player/App Preview Modal (Zero broken browser redirects!)
+      setActivePlayerModal({
+        title,
+        subtitle,
+        provider,
+        packagesCsv,
+        progress,
+      });
+    },
+    [triggerToast]
+  );
+
   const carouselSlides = [
     {
-      tag: 'CENTURY TV PLUS',
+      tag: 'SAMSUNG TV Plus',
       title: 'Descubra novos mundos',
       subtitle: 'Filmes, séries e canais gratuitos',
       actionText: 'Assistir agora',
-      actionUrl: 'https://www.youtube.com',
+      packagesCsv: 'com.google.android.youtube.tv,com.liskovsoft.smarttubetv.beta,com.google.android.youtube',
+      bgAccent: 'from-[#ff6b4a]/35 via-[#6b2cf5]/30 to-[#0c142c]/80',
     },
     {
-      tag: 'DESTAQUE HBO MAX',
-      title: 'The Last of Us: Nova Temporada',
-      subtitle: 'A aclamada série pós-apocalíptica',
-      actionText: 'Assistir na HBO Max',
-      actionUrl: 'https://www.max.com',
+      tag: 'HBO MAX ORIGINAL',
+      title: 'The Last of Us: Parte II',
+      subtitle: 'Novos episódios em 4K HDR Dolby Atmos',
+      actionText: 'Assistir agora',
+      packagesCsv: 'com.wbd.stream,com.hbo.hbonow',
+      bgAccent: 'from-amber-600/35 via-purple-900/35 to-slate-950/80',
     },
     {
-      tag: 'PRIME VIDEO',
-      title: 'Fallout: O Fim do Mundo',
-      subtitle: 'Disponível em 4K HDR com áudio espacial',
-      actionText: 'Assistir no Prime',
-      actionUrl: 'https://www.primevideo.com',
+      tag: 'PRIME VIDEO 4K',
+      title: 'Fallout: Nova Califórnia',
+      subtitle: 'Série original em destaque na sua TV',
+      actionText: 'Assistir agora',
+      packagesCsv: 'com.amazon.amazonvideo.livingroom,com.amazon.avod.thirdpartyclient',
+      bgAccent: 'from-cyan-500/35 via-blue-900/35 to-slate-950/80',
     },
     {
-      tag: 'DISNEY+',
-      title: 'Star Wars: The Mandalorian',
-      subtitle: 'As aventuras pela galáxia continuam',
-      actionText: 'Ver no Disney+',
-      actionUrl: 'https://www.disneyplus.com',
+      tag: 'DISNEY+ PREMIERE',
+      title: 'Star Wars: Andor',
+      subtitle: 'A rebelião começa em alta definição',
+      actionText: 'Assistir agora',
+      packagesCsv: 'com.disney.disneyplus',
+      bgAccent: 'from-blue-500/35 via-indigo-900/35 to-slate-950/80',
     },
     {
-      tag: 'GLOBOPLAY',
-      title: 'Novelas & Reality 24 Horas',
-      subtitle: 'Canais ao vivo em alta definição',
-      actionText: 'Abrir Globoplay',
-      actionUrl: 'https://globoplay.globo.com',
+      tag: 'GLOBOPLAY AO VIVO',
+      title: 'Canais Ao Vivo & Esportes',
+      subtitle: 'Transmissão aberta 24h sem travamentos',
+      actionText: 'Assistir agora',
+      packagesCsv: 'com.globo.globotv',
+      bgAccent: 'from-orange-500/35 via-red-900/35 to-slate-950/80',
     },
   ];
 
-  // 9 Apps list matching the screenshot
-  const appList = [
+  // 9 Streaming Apps matching the reference screenshot
+  const appList: AppItem[] = [
     {
       id: 'app-0',
       name: 'Netflix',
       label: 'Netflix',
-      bgGradient: 'from-[#141414] to-[#080808]',
-      logoColor: 'text-[#E50914]',
+      packagesCsv: 'com.netflix.ninja,com.netflix.mediaclient',
+      category: 'filmes',
+      bgGradient: 'from-[#1c090b] via-[#110506] to-[#080304]',
+      accentGlow: 'rgba(229,9,20,0.55)',
+      description: 'Filmes e séries em 4K Ultra HD',
       renderLogo: () => (
-        <span className="text-3xl sm:text-4xl font-black text-[#E50914] tracking-tighter drop-shadow-[0_4px_12px_rgba(229,9,20,0.6)]">
+        <span className="text-3xl sm:text-4xl font-black text-[#E50914] tracking-tighter drop-shadow-[0_4px_14px_rgba(229,9,20,0.85)] select-none">
           N
         </span>
       ),
-      webUrl: 'https://www.netflix.com',
     },
     {
       id: 'app-1',
       name: 'Prime Video',
       label: 'Prime Video',
-      bgGradient: 'from-[#00274c] to-[#001326]',
-      logoColor: 'text-[#00A8E1]',
+      packagesCsv: 'com.amazon.amazonvideo.livingroom,com.amazon.avod.thirdpartyclient',
+      category: 'filmes',
+      bgGradient: 'from-[#072a4f] via-[#051c36] to-[#030e1c]',
+      accentGlow: 'rgba(0,168,225,0.55)',
+      description: 'Originais Amazon e canais ao vivo',
       renderLogo: () => (
-        <div className="flex flex-col items-center">
-          <span className="text-xs sm:text-sm font-bold text-white tracking-tight leading-none">
+        <div className="flex flex-col items-center leading-none select-none">
+          <span className="text-[11px] sm:text-xs font-extrabold text-[#00A8E1] tracking-tight">
             prime
           </span>
-          <span className="text-xs sm:text-sm font-bold text-white tracking-tight leading-none">
+          <span className="text-[11px] sm:text-xs font-extrabold text-[#00A8E1] tracking-tight">
             video
           </span>
-          <span className="text-xs sm:text-sm font-bold text-[#00A8E1] leading-none -mt-0.5">
-            ⌣
-          </span>
+          <span className="text-xs font-black text-[#00A8E1] -mt-0.5">⌣</span>
         </div>
       ),
-      webUrl: 'https://www.primevideo.com',
     },
     {
       id: 'app-2',
       name: 'Disney+',
       label: 'Disney+',
-      bgGradient: 'from-[#0e1d44] to-[#070e24]',
-      logoColor: 'text-cyan-400',
+      packagesCsv: 'com.disney.disneyplus',
+      category: 'filmes',
+      bgGradient: 'from-[#0d1f4d] via-[#081331] to-[#04091a]',
+      accentGlow: 'rgba(56,189,248,0.5)',
+      description: 'Disney, Pixar, Marvel, Star Wars e NatGeo',
       renderLogo: () => (
-        <span className="text-lg sm:text-xl font-black text-white italic tracking-tight drop-shadow">
-          Disney<span className="text-cyan-400 font-normal">+</span>
+        <span className="text-sm sm:text-base font-black text-white italic tracking-tight drop-shadow select-none">
+          Disney<span className="text-cyan-400 font-bold">+</span>
         </span>
       ),
-      webUrl: 'https://www.disneyplus.com',
     },
     {
       id: 'app-3',
       name: 'YouTube',
       label: 'YouTube',
-      bgGradient: 'from-[#2b1010] to-[#120505]',
-      logoColor: 'text-white',
+      packagesCsv: 'com.google.android.youtube.tv,com.liskovsoft.smarttubetv.beta,com.google.android.youtube',
+      category: 'tv',
+      bgGradient: 'from-[#281212] via-[#160a0a] to-[#0b0505]',
+      accentGlow: 'rgba(255,0,0,0.55)',
+      description: 'Vídeos em 4K 60fps e canais ao vivo',
       renderLogo: () => (
-        <div className="w-10 h-7 sm:w-11 sm:h-8 bg-[#FF0000] rounded-xl flex items-center justify-center shadow-lg shadow-red-600/40">
-          <Play className="w-4 h-4 sm:w-5 sm:h-5 text-white fill-white ml-0.5" />
+        <div className="w-9 h-6 sm:w-11 sm:h-7 bg-[#FF0000] rounded-xl flex items-center justify-center shadow-[0_4px_14px_rgba(255,0,0,0.6)]">
+          <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white fill-white ml-0.5" />
         </div>
       ),
-      webUrl: 'https://www.youtube.com',
     },
     {
       id: 'app-4',
       name: 'HBO max',
       label: 'HBO max',
-      bgGradient: 'from-[#240b49] to-[#100424]',
-      logoColor: 'text-white',
+      packagesCsv: 'com.wbd.stream,com.hbo.hbonow',
+      category: 'filmes',
+      bgGradient: 'from-[#271052] via-[#180836] to-[#0c041c]',
+      accentGlow: 'rgba(147,51,234,0.55)',
+      description: 'Séries HBO, filmes Warner e Champions League',
       renderLogo: () => (
-        <div className="flex flex-col items-center leading-none">
-          <span className="text-sm sm:text-base font-black text-white tracking-wider">
-            HBO
-          </span>
-          <span className="text-xs sm:text-sm font-bold text-indigo-300">
-            max
-          </span>
+        <div className="flex flex-col items-center leading-none select-none">
+          <span className="text-xs sm:text-sm font-black text-white tracking-wider">HBO</span>
+          <span className="text-[11px] sm:text-xs font-extrabold text-purple-200 tracking-tight">max</span>
         </div>
       ),
-      webUrl: 'https://www.max.com',
     },
     {
       id: 'app-5',
       name: 'globoplay',
       label: 'globoplay',
-      bgGradient: 'from-[#ff3d00] to-[#c61000]',
-      logoColor: 'text-white',
+      packagesCsv: 'com.globo.globotv',
+      category: 'tv',
+      bgGradient: 'from-[#ff3d00] via-[#e01e00] to-[#990900]',
+      accentGlow: 'rgba(255,61,0,0.6)',
+      description: 'TV Globo Ao Vivo, novelas, séries e futebol',
       renderLogo: () => (
-        <span className="text-xs sm:text-sm font-black text-white tracking-tight drop-shadow">
+        <span className="text-[11px] sm:text-xs font-black text-white tracking-tight drop-shadow select-none">
           globoplay
         </span>
       ),
-      webUrl: 'https://globoplay.globo.com',
     },
     {
       id: 'app-6',
       name: 'Apple TV',
       label: 'Apple TV',
-      bgGradient: 'from-[#222224] to-[#0f0f10]',
-      logoColor: 'text-white',
+      packagesCsv: 'com.apple.atve.androidtv.appletv',
+      category: 'filmes',
+      bgGradient: 'from-[#242529] via-[#151619] to-[#0a0a0c]',
+      accentGlow: 'rgba(255,255,255,0.35)',
+      description: 'Apple Originals como Ruptura, Silo e Ted Lasso',
       renderLogo: () => (
-        <div className="flex items-center gap-0.5 text-white font-bold text-xs sm:text-sm">
+        <div className="flex items-center gap-0.5 text-white font-bold text-xs sm:text-sm select-none">
           <span></span>
-          <span className="text-xs">tv</span>
+          <span>tv</span>
         </div>
       ),
-      webUrl: 'https://tv.apple.com',
     },
     {
       id: 'app-7',
       name: 'Paramount+',
       label: 'Paramount+',
-      bgGradient: 'from-[#004fcf] to-[#002875]',
-      logoColor: 'text-white',
+      packagesCsv: 'com.cbs.ca,com.cbs.app',
+      category: 'filmes',
+      bgGradient: 'from-[#0052d4] via-[#003699] to-[#001c57]',
+      accentGlow: 'rgba(0,82,212,0.6)',
+      description: 'Filmes de cinema, séries e Libertadores',
       renderLogo: () => (
-        <div className="text-center">
-          <div className="text-[10px] text-white/80">★ ★ ★</div>
-          <span className="text-xs font-bold text-white tracking-tight">Paramount+</span>
+        <div className="text-center leading-tight select-none">
+          <div className="text-[7px] text-white/80 tracking-widest">★★★</div>
+          <span className="text-[9px] sm:text-[10px] font-bold text-white italic tracking-tight">
+            Paramount+
+          </span>
         </div>
       ),
-      webUrl: 'https://www.paramountplus.com',
     },
     {
       id: 'app-8',
       name: 'Samsung TV Plus',
-      label: 'Century TV Plus',
-      bgGradient: 'from-[#082032] to-[#030d14]',
-      logoColor: 'text-cyan-400',
+      label: 'Samsung TV Plus',
+      packagesCsv: 'com.tcl.tv,com.google.android.tv',
+      category: 'tv',
+      bgGradient: 'from-[#102538] via-[#091624] to-[#050b12]',
+      accentGlow: 'rgba(56,189,248,0.5)',
+      description: 'Grade de canais IP gratuitos 24 horas',
       renderLogo: () => (
-        <div className="flex flex-col items-center">
-          <div className="w-6 h-5 border-2 border-cyan-400 rounded flex items-center justify-center">
-            <div className="w-2.5 h-2.5 bg-amber-400 rounded-sm" />
+        <div className="flex flex-col items-center leading-none select-none">
+          <div className="w-6 h-4 border-2 border-cyan-400 rounded-md flex items-center justify-center mb-0.5">
+            <div className="w-2 h-2 bg-orange-400 rounded-xs" />
           </div>
-          <span className="text-[9px] font-bold text-white mt-0.5">TV Plus</span>
+          <span className="text-[7px] sm:text-[8px] font-bold text-white tracking-tight">
+            TV Plus
+          </span>
         </div>
       ),
-      webUrl: '#',
     },
   ];
 
-  // 5 "Continuar assistindo" cards matching the screenshot
-  const continueWatchingList = [
+  // 5 "Continuar assistindo" cards matching the reference photo
+  const continueWatchingList: ContinueItem[] = [
     {
       id: 'continue-0',
       title: 'THE LAST OF US',
+      subtitle: 'T1:E4 • Por Favor, Segure a Minha Mão',
       provider: 'HBO max',
-      providerColor: 'text-white font-black text-[10px]',
-      progress: 35,
-      bgImage: 'from-amber-950/80 via-slate-900 to-black',
-      category: 'Drama • T1:E4',
-      badge: 'Pedro Pascal',
-      webUrl: 'https://www.max.com',
+      packagesCsv: 'com.wbd.stream,com.hbo.hbonow',
+      providerBadgeClass: 'text-white font-black',
+      progress: 42,
+      bgGradient: 'from-[#3b2d1d] via-[#1c1610] to-[#090806]',
+      accentColor: '#eab308',
+      durationRestante: 'Restam 28 min',
     },
     {
       id: 'continue-1',
       title: 'Fallout',
+      subtitle: 'T1:E2 • O Alvo',
       provider: 'prime video',
-      providerColor: 'text-[#00A8E1] font-bold text-[10px]',
-      progress: 20,
-      bgImage: 'from-yellow-950/80 via-slate-900 to-black',
-      category: 'Ficção • T1:E2',
-      badge: 'Vault 33',
-      webUrl: 'https://www.primevideo.com',
+      packagesCsv: 'com.amazon.amazonvideo.livingroom,com.amazon.avod.thirdpartyclient',
+      providerBadgeClass: 'text-[#00A8E1] font-extrabold',
+      progress: 35,
+      bgGradient: 'from-[#3d3112] via-[#181f1c] to-[#070a09]',
+      accentColor: '#38bdf8',
+      durationRestante: 'Restam 39 min',
     },
     {
       id: 'continue-2',
-      title: 'HOUSE OF DRAGON',
+      title: 'HOUSE OF THE DRAGON',
+      subtitle: 'T2:E6 • O Povo Comum',
       provider: 'HBO max',
-      providerColor: 'text-white font-black text-[10px]',
-      progress: 65,
-      bgImage: 'from-red-950/80 via-slate-900 to-black',
-      category: 'Fantasia • T2:E6',
-      badge: 'Rhaenyra',
-      webUrl: 'https://www.max.com',
+      packagesCsv: 'com.wbd.stream,com.hbo.hbonow',
+      providerBadgeClass: 'text-white font-black',
+      progress: 68,
+      bgGradient: 'from-[#421512] via-[#210b09] to-[#0a0404]',
+      accentColor: '#ef4444',
+      durationRestante: 'Restam 19 min',
     },
     {
       id: 'continue-3',
       title: 'Ruptura',
+      subtitle: 'T1:E8 • O Que Tem Para o Jantar?',
       provider: 'tv+',
-      providerColor: 'text-slate-300 font-bold text-[10px]',
-      progress: 45,
-      bgImage: 'from-blue-950/80 via-slate-900 to-black',
-      category: 'Suspense • T1:E7',
-      badge: 'Lumon Corp',
-      webUrl: 'https://tv.apple.com',
+      packagesCsv: 'com.apple.atve.androidtv.appletv',
+      providerBadgeClass: 'text-white font-bold',
+      progress: 54,
+      bgGradient: 'from-[#122b3d] via-[#0b1924] to-[#050b10]',
+      accentColor: '#60a5fa',
+      durationRestante: 'Restam 22 min',
     },
     {
       id: 'continue-4',
       title: 'O PROBLEMA DOS 3 CORPOS',
+      subtitle: 'T1:E5 • Dia do Julgamento',
       provider: 'NETFLIX',
-      providerColor: 'text-[#E50914] font-black text-[10px]',
-      progress: 80,
-      bgImage: 'from-indigo-950/80 via-slate-900 to-black',
-      category: 'Ficção Científica • T1:E5',
-      badge: 'San-Ti',
-      webUrl: 'https://www.netflix.com',
+      packagesCsv: 'com.netflix.ninja,com.netflix.mediaclient',
+      providerBadgeClass: 'text-[#E50914] font-black',
+      progress: 78,
+      bgGradient: 'from-[#2e1f14] via-[#171219] to-[#07060a]',
+      accentColor: '#f97316',
+      durationRestante: 'Restam 14 min',
     },
   ];
 
-  // Dock items
-  const dockItems = [
-    { id: 'dock-inicio', label: 'Início', icon: Home },
-    { id: 'dock-apps', label: 'Apps', icon: Grid },
-    { id: 'dock-filmes', label: 'Filmes e Séries', icon: Film },
-    { id: 'dock-tv', label: 'TV ao Vivo', icon: Tv2 },
-    { id: 'dock-jogos', label: 'Jogos', icon: Gamepad2 },
-    { id: 'dock-musica', label: 'Música', icon: Music2 },
-    { id: 'dock-config', label: 'Configurações', icon: Settings },
+  // Extra Apps in the App Drawer
+  const drawerApps = [
+    { name: 'Netflix 4K', icon: '🎬', tag: 'Streaming', pkg: 'com.netflix.ninja,com.netflix.mediaclient' },
+    { name: 'YouTube TV', icon: '▶️', tag: 'Vídeos', pkg: 'com.google.android.youtube.tv,com.google.android.youtube' },
+    { name: 'Prime Video', icon: '📦', tag: 'Streaming', pkg: 'com.amazon.amazonvideo.livingroom' },
+    { name: 'Disney+', icon: '✨', tag: 'Streaming', pkg: 'com.disney.disneyplus' },
+    { name: 'HBO Max', icon: '🟣', tag: 'Séries & Filmes', pkg: 'com.wbd.stream' },
+    { name: 'Globoplay', icon: '🟠', tag: 'TV Ao Vivo', pkg: 'com.globo.globotv' },
+    { name: 'Spotify TV', icon: '🎵', tag: 'Música', pkg: 'com.spotify.tv.android,com.spotify.music' },
+    { name: 'SmartTube Next', icon: '🛡️', tag: 'Sem Anúncios', pkg: 'com.liskovsoft.smarttubetv.beta' },
+    { name: 'Stremio 4K', icon: '🔮', tag: 'Cinema', pkg: 'com.stremio.one' },
+    { name: 'VLC Player', icon: 'コーン', tag: 'Mídia USB', pkg: 'org.videolan.vlc' },
+    { name: 'Wi-Fi & Rede', icon: '📶', tag: 'Android 14', pkg: 'WIFI_SETTINGS' },
+    { name: 'Configurações da TV', icon: '⚙️', tag: 'Android 14', pkg: 'ANDROID_SETTINGS' },
   ];
 
-  // 100% Functional TV Remote D-Pad Navigation Handler
+  // Left Dock Menu Items
+  const dockItems = [
+    { id: 'dock-inicio', key: 'inicio', label: 'Início', icon: Home },
+    { id: 'dock-apps', key: 'apps', label: 'Apps', icon: Grid },
+    { id: 'dock-filmes', key: 'filmes', label: 'Filmes e Séries', icon: Film },
+    { id: 'dock-tv', key: 'tv', label: 'TV ao Vivo', icon: Tv2 },
+    { id: 'dock-jogos', key: 'jogos', label: 'Jogos', icon: Gamepad2 },
+    { id: 'dock-musica', key: 'musica', label: 'Música', icon: Music2 },
+    { id: 'dock-config', key: 'config', label: 'Configurações', icon: Settings },
+  ];
+
+  const topBarIds = ['top-search', 'top-wifi', 'top-profile', 'top-fullscreen'];
+
+  // Unified D-Pad Command Dispatcher (used by both Physical Remote & Virtual Remote Simulator)
+  const executeRemoteCommand = useCallback(
+    (key: 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'Enter' | 'Escape' | 'Home') => {
+      playNavigationSound(key === 'Enter' ? 680 : 540);
+
+      // Home Key always resets to Início and Netflix
+      if (key === 'Home') {
+        setIsAppDrawerOpen(false);
+        setIsSearchOpen(false);
+        setActivePlayerModal(null);
+        setActiveDock('inicio');
+        setFocusedId('app-0');
+        triggerToast('🏠 Tela Inicial • Launcher Glass 26');
+        return;
+      }
+
+      // 1. Handle Player Modal Open
+      if (activePlayerModal) {
+        if (key === 'Escape' || key === 'Enter') {
+          setActivePlayerModal(null);
+        }
+        return;
+      }
+
+      // 2. Handle Search Modal Open
+      if (isSearchOpen) {
+        if (key === 'Escape') {
+          setIsSearchOpen(false);
+        }
+        return;
+      }
+
+      // 3. Handle App Drawer Modal Open
+      if (isAppDrawerOpen) {
+        if (key === 'Escape') {
+          setIsAppDrawerOpen(false);
+          return;
+        }
+        if (key === 'ArrowRight') {
+          setDrawerFocusIdx((prev) => Math.min(drawerApps.length - 1, prev + 1));
+          return;
+        }
+        if (key === 'ArrowLeft') {
+          setDrawerFocusIdx((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key === 'ArrowDown') {
+          setDrawerFocusIdx((prev) => Math.min(drawerApps.length - 1, prev + 4));
+          return;
+        }
+        if (key === 'ArrowUp') {
+          setDrawerFocusIdx((prev) => Math.max(0, prev - 4));
+          return;
+        }
+        if (key === 'Enter') {
+          const selected = drawerApps[drawerFocusIdx];
+          if (selected) {
+            setIsAppDrawerOpen(false);
+            const bridge = (window as unknown as {
+              AndroidTV?: { openSettings?: () => void; openWifiSettings?: () => void };
+            }).AndroidTV;
+            if (selected.pkg === 'ANDROID_SETTINGS') {
+              if (bridge?.openSettings) bridge.openSettings();
+              else if (onOpenTermuxGuide) onOpenTermuxGuide();
+              else triggerToast('⚙️ Abrindo Configurações do Android 14 TV...');
+              return;
+            }
+            if (selected.pkg === 'WIFI_SETTINGS') {
+              if (bridge?.openWifiSettings) bridge.openWifiSettings();
+              else triggerToast('📶 Rede Wi-Fi 5GHz Conectada (192.168.0.117)');
+              return;
+            }
+            launchNativeOrSimulate(selected.name, selected.tag, selected.name, selected.pkg);
+          }
+          return;
+        }
+        return;
+      }
+
+      // 4. Escape on main screen returns focus to Início / Netflix
+      if (key === 'Escape') {
+        setActiveDock('inicio');
+        setFocusedId('app-0');
+        return;
+      }
+
+      // 5. Enter / OK Action on Main Screen
+      if (key === 'Enter') {
+        if (focusedId === 'top-search') {
+          setIsSearchOpen(true);
+          return;
+        }
+        if (focusedId === 'top-wifi') {
+          const bridge = (window as unknown as { AndroidTV?: { openWifiSettings?: () => void } }).AndroidTV;
+          if (bridge?.openWifiSettings) {
+            bridge.openWifiSettings();
+          } else {
+            triggerToast('📶 Wi-Fi Conectado • IP da Century Stick: 192.168.0.117');
+          }
+          return;
+        }
+        if (focusedId === 'top-profile') {
+          triggerToast('👤 Perfil Ativo: Sidney • Century TV Stick (Android 14)');
+          return;
+        }
+        if (focusedId === 'top-fullscreen') {
+          toggleFullscreen();
+          return;
+        }
+        if (focusedId === 'hero-banner') {
+          const slide = carouselSlides[carouselIndex];
+          launchNativeOrSimulate(slide.title, slide.subtitle, slide.tag, slide.packagesCsv);
+          return;
+        }
+        if (focusedId === 'widget-weather') {
+          triggerToast('🌕 São Paulo • 18°C • Céu Limpo • Umidade 62%');
+          return;
+        }
+        if (focusedId === 'widget-hdmi') {
+          triggerToast('🔌 Entrada HDMI 1 Ativa (1080p / 4K @ 60Hz HDR)');
+          return;
+        }
+        if (focusedId.startsWith('app-')) {
+          const idx = parseInt(focusedId.replace('app-', ''), 10);
+          const app = appList[idx];
+          if (app) {
+            launchNativeOrSimulate(app.name, app.description, app.name, app.packagesCsv);
+          }
+          return;
+        }
+        if (focusedId.startsWith('continue-')) {
+          const idx = parseInt(focusedId.replace('continue-', ''), 10);
+          const item = continueWatchingList[idx];
+          if (item) {
+            launchNativeOrSimulate(
+              item.title,
+              item.subtitle,
+              item.provider,
+              item.packagesCsv,
+              item.progress
+            );
+          }
+          return;
+        }
+        if (focusedId.startsWith('dock-')) {
+          const dockKey = focusedId.replace('dock-', '');
+          setActiveDock(dockKey);
+          if (dockKey === 'apps') {
+            setDrawerFocusIdx(0);
+            setIsAppDrawerOpen(true);
+          } else if (dockKey === 'config') {
+            const bridge = (window as unknown as { AndroidTV?: { openSettings?: () => void } }).AndroidTV;
+            if (bridge?.openSettings) {
+              bridge.openSettings();
+            } else if (onOpenTermuxGuide) {
+              onOpenTermuxGuide();
+            } else {
+              triggerToast('⚙️ Configurações de Desempenho Ativas (0.5x)');
+            }
+          } else {
+            triggerToast(`📂 Categoria: ${dockItems.find((d) => d.key === dockKey)?.label}`);
+          }
+          return;
+        }
+      }
+
+      // 6. Directional D-Pad Navigation Graph
+      setFocusedId((current) => {
+        // --- TOP BAR ---
+        if (topBarIds.includes(current)) {
+          const idx = topBarIds.indexOf(current);
+          if (key === 'ArrowLeft') {
+            return idx > 0 ? topBarIds[idx - 1] : 'dock-inicio';
+          }
+          if (key === 'ArrowRight') {
+            return idx < topBarIds.length - 1 ? topBarIds[idx + 1] : current;
+          }
+          if (key === 'ArrowDown') {
+            return idx === 0 ? 'hero-banner' : 'widget-weather';
+          }
+          return current;
+        }
+
+        // --- LEFT DOCK ---
+        if (current.startsWith('dock-')) {
+          const dockIdx = dockItems.findIndex((d) => d.id === current);
+          if (key === 'ArrowDown') {
+            const nextIdx = Math.min(dockItems.length - 1, dockIdx + 1);
+            setActiveDock(dockItems[nextIdx].key);
+            return dockItems[nextIdx].id;
+          }
+          if (key === 'ArrowUp') {
+            const prevIdx = Math.max(0, dockIdx - 1);
+            setActiveDock(dockItems[prevIdx].key);
+            return dockItems[prevIdx].id;
+          }
+          if (key === 'ArrowRight') {
+            if (dockIdx <= 1) return 'hero-banner';
+            if (dockIdx <= 4) return 'app-0';
+            return 'continue-0';
+          }
+          return current;
+        }
+
+        // --- HERO BANNER ---
+        if (current === 'hero-banner') {
+          if (key === 'ArrowUp') return 'top-search';
+          if (key === 'ArrowLeft') return 'dock-inicio';
+          if (key === 'ArrowRight') return 'widget-weather';
+          if (key === 'ArrowDown') return 'app-0';
+          return current;
+        }
+
+        // --- WEATHER WIDGET ---
+        if (current === 'widget-weather') {
+          if (key === 'ArrowUp') return 'top-wifi';
+          if (key === 'ArrowLeft') return 'hero-banner';
+          if (key === 'ArrowDown') return 'widget-hdmi';
+          return current;
+        }
+
+        // --- HDMI WIDGET ---
+        if (current === 'widget-hdmi') {
+          if (key === 'ArrowUp') return 'widget-weather';
+          if (key === 'ArrowLeft') return 'hero-banner';
+          if (key === 'ArrowDown') return 'app-7';
+          return current;
+        }
+
+        // --- SEUS APLICATIVOS ROW (app-0 to app-8) ---
+        if (current.startsWith('app-')) {
+          const idx = parseInt(current.replace('app-', ''), 10);
+          if (key === 'ArrowLeft') {
+            return idx === 0 ? 'dock-apps' : `app-${idx - 1}`;
+          }
+          if (key === 'ArrowRight') {
+            return idx < appList.length - 1 ? `app-${idx + 1}` : current;
+          }
+          if (key === 'ArrowUp') {
+            return idx <= 5 ? 'hero-banner' : 'widget-hdmi';
+          }
+          if (key === 'ArrowDown') {
+            const targetContinue = Math.min(
+              continueWatchingList.length - 1,
+              Math.floor((idx / appList.length) * continueWatchingList.length)
+            );
+            return `continue-${targetContinue}`;
+          }
+          return current;
+        }
+
+        // --- CONTINUAR ASSISTINDO ROW (continue-0 to continue-4) ---
+        if (current.startsWith('continue-')) {
+          const idx = parseInt(current.replace('continue-', ''), 10);
+          if (key === 'ArrowLeft') {
+            return idx === 0 ? 'dock-filmes' : `continue-${idx - 1}`;
+          }
+          if (key === 'ArrowRight') {
+            return idx < continueWatchingList.length - 1 ? `continue-${idx + 1}` : current;
+          }
+          if (key === 'ArrowUp') {
+            const targetApp = Math.min(appList.length - 1, idx * 2);
+            return `app-${targetApp}`;
+          }
+          return current;
+        }
+
+        return 'app-0';
+      });
+    },
+    [
+      activePlayerModal,
+      appList,
+      carouselIndex,
+      carouselSlides,
+      continueWatchingList,
+      dockItems,
+      drawerApps,
+      drawerFocusIdx,
+      focusedId,
+      isAppDrawerOpen,
+      isSearchOpen,
+      launchNativeOrSimulate,
+      onOpenTermuxGuide,
+      playNavigationSound,
+      toggleFullscreen,
+      triggerToast,
+    ]
+  );
+
+  // Physical Keyboard & Android TV D-Pad Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Escape / Back button on TV remote
+      if (isSearchOpen && e.target instanceof HTMLInputElement) {
+        if (e.key === 'Escape') {
+          setIsSearchOpen(false);
+        }
+        return;
+      }
+
       if (e.key === 'Escape' || e.key === 'Back' || e.keyCode === 27 || e.keyCode === 4) {
-        if (isAppDrawerOpen) {
-          setIsAppDrawerOpen(false);
-          playNavigationSound();
-          return;
-        }
-        if (focusedId !== 'app-0') {
-          setFocusedId('app-0');
-          playNavigationSound();
-          return;
-        }
+        e.preventDefault();
+        executeRemoteCommand('Escape');
+        return;
       }
 
-      // Enter / OK button on TV remote
-      if (e.key === 'Enter' || e.key === ' ' || e.keyCode === 13) {
+      if (e.key === 'Enter' || e.key === ' ' || e.keyCode === 13 || e.keyCode === 23) {
         e.preventDefault();
-        playNavigationSound();
-
-        // Handle Hero Banner Action
-        if (focusedId === 'hero-banner') {
-          triggerToast(`🚀 Abrindo ${carouselSlides[carouselIndex].title} no Century TV Stick...`);
-          window.open(carouselSlides[carouselIndex].actionUrl, '_blank');
-          return;
-        }
-
-        // Handle Weather Widget
-        if (focusedId === 'widget-weather') {
-          triggerToast('⛅ Previsão do Tempo: São Paulo 18°C, Céu Limpo.');
-          return;
-        }
-
-        // Handle HDMI Widget
-        if (focusedId === 'widget-hdmi') {
-          triggerToast('🔌 Alternando entrada para HDMI 1 no Century TV Stick...');
-          return;
-        }
-
-        // Handle App Selection
-        if (focusedId.startsWith('app-')) {
-          const appIdx = parseInt(focusedId.replace('app-', ''), 10);
-          const app = appList[appIdx];
-          if (app) {
-            triggerToast(`🚀 Abrindo ${app.name} no Century TV Stick...`);
-            if (app.webUrl && app.webUrl !== '#') {
-              window.open(app.webUrl, '_blank');
-            } else {
-              setIsAppDrawerOpen(true);
-            }
-          }
-          return;
-        }
-
-        // Handle Continue Watching
-        if (focusedId.startsWith('continue-')) {
-          const cIdx = parseInt(focusedId.replace('continue-', ''), 10);
-          const item = continueWatchingList[cIdx];
-          if (item) {
-            triggerToast(`▶ Continuando ${item.title} (${item.provider}) do minuto ${item.progress}%...`);
-            window.open(item.webUrl, '_blank');
-          }
-          return;
-        }
-
-        // Handle Dock items
-        if (focusedId.startsWith('dock-')) {
-          const dockName = focusedId.replace('dock-', '');
-          setActiveDock(dockName);
-          if (dockName === 'apps') setIsAppDrawerOpen(true);
-          if (dockName === 'config' && onOpenTermuxGuide) onOpenTermuxGuide();
-          return;
-        }
+        executeRemoteCommand('Enter');
+        return;
       }
 
-      // Directional D-Pad mapping: ArrowUp, ArrowDown, ArrowLeft, ArrowRight
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      if (
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight'
+      ) {
         e.preventDefault();
-        playNavigationSound();
-
-        setFocusedId((current) => {
-          // --- NAVIGATION WITHIN DOCK ---
-          if (current.startsWith('dock-')) {
-            const dockIdx = dockItems.findIndex((d) => d.id === current);
-            if (e.key === 'ArrowDown') {
-              const next = Math.min(dockItems.length - 1, dockIdx + 1);
-              return dockItems[next].id;
-            }
-            if (e.key === 'ArrowUp') {
-              const prev = Math.max(0, dockIdx - 1);
-              return dockItems[prev].id;
-            }
-            if (e.key === 'ArrowRight') {
-              return 'app-0'; // moves to Netflix
-            }
-            return current;
-          }
-
-          // --- NAVIGATION ON HERO BANNER ---
-          if (current === 'hero-banner') {
-            if (e.key === 'ArrowLeft') return 'dock-inicio';
-            if (e.key === 'ArrowRight') return 'widget-weather';
-            if (e.key === 'ArrowDown') return 'app-0';
-            return current;
-          }
-
-          // --- NAVIGATION ON WEATHER WIDGET ---
-          if (current === 'widget-weather') {
-            if (e.key === 'ArrowLeft') return 'hero-banner';
-            if (e.key === 'ArrowDown') return 'widget-hdmi';
-            return current;
-          }
-
-          // --- NAVIGATION ON HDMI WIDGET ---
-          if (current === 'widget-hdmi') {
-            if (e.key === 'ArrowUp') return 'widget-weather';
-            if (e.key === 'ArrowLeft') return 'hero-banner';
-            if (e.key === 'ArrowDown') return 'app-8';
-            return current;
-          }
-
-          // --- NAVIGATION IN "SEUS APLICATIVOS" ROW (app-0 to app-8) ---
-          if (current.startsWith('app-')) {
-            const idx = parseInt(current.replace('app-', ''), 10);
-            if (e.key === 'ArrowLeft') {
-              if (idx === 0) return 'dock-inicio'; // goes to dock
-              return `app-${idx - 1}`;
-            }
-            if (e.key === 'ArrowRight') {
-              if (idx < appList.length - 1) return `app-${idx + 1}`;
-              return current;
-            }
-            if (e.key === 'ArrowUp') {
-              if (idx <= 4) return 'hero-banner';
-              return 'widget-hdmi';
-            }
-            if (e.key === 'ArrowDown') {
-              // Map to continue watching item
-              const continueTarget = Math.min(4, Math.floor((idx / appList.length) * 5));
-              return `continue-${continueTarget}`;
-            }
-            return current;
-          }
-
-          // --- NAVIGATION IN "CONTINUAR ASSISTINDO" ROW (continue-0 to continue-4) ---
-          if (current.startsWith('continue-')) {
-            const idx = parseInt(current.replace('continue-', ''), 10);
-            if (e.key === 'ArrowLeft') {
-              if (idx === 0) return 'dock-filmes';
-              return `continue-${idx - 1}`;
-            }
-            if (e.key === 'ArrowRight') {
-              if (idx < continueWatchingList.length - 1) return `continue-${idx + 1}`;
-              return current;
-            }
-            if (e.key === 'ArrowUp') {
-              // Map back up to app row
-              const appTarget = Math.min(8, idx * 2);
-              return `app-${appTarget}`;
-            }
-            return current;
-          }
-
-          return 'app-0';
-        });
+        executeRemoteCommand(e.key);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [focusedId, isAppDrawerOpen, carouselIndex, playNavigationSound, onOpenTermuxGuide]);
+  }, [executeRemoteCommand, isSearchOpen]);
 
   return (
     <div
       ref={containerRef}
-      className={`relative w-full bg-[#04060e] text-white font-sans overflow-hidden select-none transition-all duration-300 ${
+      className={`relative w-full bg-[#060916] text-white font-sans overflow-hidden select-none transition-all duration-300 ${
         isFullscreen
-          ? 'fixed inset-0 z-50 h-screen w-screen'
-          : 'rounded-3xl border border-white/10 shadow-2xl min-h-[720px]'
+          ? 'fixed inset-0 z-50 h-screen w-screen flex flex-col justify-between'
+          : 'rounded-[32px] border border-white/15 shadow-[0_25px_70px_rgba(0,0,0,0.85)] min-h-[680px]'
       }`}
     >
       {/* ========================================================================= */}
-      {/* 4K COSMIC SCI-FI BACKGROUND REPLICA (Planeta com anel, montanhas e lago)  */}
+      {/* COSMIC PLANET & SUNSET MOUNTAIN LAKE WALLPAPER (Fiel à Foto enviada)      */}
       {/* ========================================================================= */}
-      <div className="absolute inset-0 pointer-events-none">
-        {/* Deep starry space gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#090b1c] via-[#121330] to-[#05060f]" />
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {/* Deep Twilight Sky */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0b0e22] via-[#171836] to-[#080a16]" />
 
-        {/* Twinkling starfield effect */}
-        <div 
-          className="absolute inset-0 opacity-40 bg-[radial-gradient(white_1px,transparent_1px)]"
-          style={{ backgroundSize: '40px 40px' }}
+        {/* Subtle Starfield */}
+        <div
+          className="absolute inset-0 opacity-35 bg-[radial-gradient(white_1px,transparent_1px)]"
+          style={{ backgroundSize: '46px 46px' }}
         />
 
-        {/* Giant Ringed Planet with luminous atmosphere (top right) */}
-        <div className="absolute -top-12 right-1/4 w-[380px] h-[380px] rounded-full bg-gradient-to-tr from-[#9945FF] via-[#DC1FFF] to-[#FF8C00] opacity-45 blur-md" />
-        <div className="absolute -top-8 right-[24%] w-[350px] h-[350px] rounded-full bg-gradient-to-br from-[#1b1c3a] via-[#15102a] to-[#2c1338] shadow-[0_0_90px_rgba(220,31,255,0.4)] overflow-hidden">
-          {/* Planet shadow and texture */}
-          <div className="absolute inset-0 bg-gradient-to-tr from-black via-black/40 to-transparent" />
-        </div>
-        
-        {/* Planetary Rings Angle */}
-        <div 
-          className="absolute -top-4 right-[16%] w-[520px] h-[140px] rounded-full border-[8px] border-[#DC1FFF]/30 opacity-70 transform -rotate-[24deg] pointer-events-none blur-[1px]"
-          style={{ boxShadow: '0 0 50px rgba(220,31,255,0.5)' }}
-        />
+        {/* Giant Ringed Planet at Top Right-Center */}
+        <div className="absolute -top-24 right-[18%] w-[360px] h-[360px] rounded-full bg-gradient-to-tr from-[#d946ef]/40 via-[#ec4899]/35 to-[#f97316]/30 blur-2xl" />
+        <div className="absolute -top-20 right-[19%] w-[330px] h-[330px] rounded-full bg-gradient-to-br from-[#3b2d54] via-[#211936] to-[#0d0a1a] shadow-[inset_-30px_-20px_60px_rgba(0,0,0,0.85),0_0_80px_rgba(236,72,153,0.3)] border border-white/10" />
 
-        {/* Secondary distant moon */}
-        <div className="absolute top-16 right-16 w-14 h-14 rounded-full bg-slate-300/60 shadow-[0_0_20px_rgba(255,255,255,0.5)] blur-[0.5px]" />
+        {/* Secondary Small Moon to the right of the planet */}
+        <div className="absolute top-14 right-[14%] w-12 h-12 rounded-full bg-gradient-to-br from-[#f8cba6] via-[#b37d64] to-[#2c1d24] shadow-[0_0_25px_rgba(248,203,166,0.45)]" />
 
-        {/* Sunset glow behind mountains */}
-        <div className="absolute bottom-1/3 left-0 right-0 h-48 bg-gradient-to-t from-[#ff6b4a]/25 via-[#9945FF]/15 to-transparent blur-2xl" />
+        {/* Warm Sunset Glow Horizon behind Mountains */}
+        <div className="absolute top-[22%] left-[18%] right-[12%] h-52 bg-gradient-to-r from-indigo-500/20 via-[#ff7b54]/35 to-purple-500/20 blur-3xl" />
 
-        {/* Mountain Silhouette Layers */}
+        {/* Jagged Alpine Mountains & Lake Reflection */}
         <svg
-          className="absolute bottom-20 left-0 right-0 w-full h-64 opacity-50"
+          className="absolute bottom-24 left-0 right-0 w-full h-64 opacity-65"
           preserveAspectRatio="none"
           viewBox="0 0 1440 320"
         >
           <path
-            fill="#090a18"
-            d="M0,192L80,160C160,128,320,64,480,96C640,128,800,256,960,256C1120,256,1280,128,1360,64L1440,0L1440,320L1360,320C1280,320,1120,320,960,320C800,320,640,320,480,320C320,320,160,320,80,320L0,320Z"
+            fill="#11152c"
+            d="M0,192L120,130L240,180L380,85L510,165L660,64L820,175L960,95L1110,160L1270,70L1440,150L1440,320L0,320Z"
+          />
+          <path
+            fill="#090c1c"
+            d="M0,224L160,165L310,210L490,120L650,205L830,115L1010,195L1190,130L1350,190L1440,160L1440,320L0,320Z"
           />
         </svg>
 
-        {/* Alpine Lake Reflection */}
-        <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#04060e] via-[#080c1d]/90 to-transparent" />
+        {/* Bottom Lake Dark Glass Vignette */}
+        <div className="absolute bottom-0 left-0 right-0 h-44 bg-gradient-to-t from-[#050711] via-[#070b19]/95 to-transparent" />
       </div>
 
       {/* ========================================================================= */}
-      {/* TV REMOTE HUD INDICATOR (Informa que o controle está 100% ativo)          */}
+      {/* TOP BAR: CLOCK (Left) + STATUS & REMOTE SIMULATOR TOGGLE (Right)          */}
       {/* ========================================================================= */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 bg-black/60 backdrop-blur-md border border-white/10 px-3.5 py-1 rounded-full text-[11px] text-slate-300 flex items-center gap-2 shadow-lg">
-        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-        <span className="font-semibold text-white">Controle da TV: 100% Funcional</span>
-        <span className="text-slate-400">| Use as setas (D-Pad) e OK</span>
-        <button
-          onClick={() => setSoundEnabled((prev) => !prev)}
-          className="ml-1 text-slate-400 hover:text-white"
-          title={soundEnabled ? 'Som do controle ativado' : 'Som desativado'}
-        >
-          {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-cyan-400" /> : <VolumeX className="w-3.5 h-3.5" />}
-        </button>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* MAIN LAYOUT: LEFT DOCK + RIGHT CONTENT GRID                               */}
-      {/* ========================================================================= */}
-      <div className="relative z-10 flex h-full p-4 sm:p-6 gap-6">
-        
-        {/* ======================================================================= */}
-        {/* LEFT DOCK (Cápsula Flutuante de Vidro Líquido do Print)                 */}
-        {/* ======================================================================= */}
-        <aside className="w-48 sm:w-56 shrink-0 flex flex-col justify-start space-y-4">
-          
-          {/* Top Left Clock and Date (Exato: 20:35 • Seg, 26 de Maio) */}
-          <div className="pl-2 pt-1">
-            <div className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight font-mono drop-shadow">
-              {timeStr}
-            </div>
-            <div className="text-xs text-slate-300 font-medium tracking-wide">
-              {dateStr}
-            </div>
+      <div className="relative z-20 flex items-start justify-between px-5 sm:px-8 pt-4 sm:pt-6 pb-2">
+        {/* Top Left Clock & Date (20:35 / Seg, 26 de Maio) */}
+        <div className="pl-1">
+          <div className="text-3xl sm:text-5xl font-light text-white tracking-tight leading-none drop-shadow-md">
+            {timeStr}
           </div>
+          <div className="text-xs sm:text-sm text-slate-300/90 font-medium mt-1 tracking-wide">
+            {dateStr}
+          </div>
+        </div>
 
-          {/* Floating Frosted Glass Dock Container */}
-          <nav className="backdrop-blur-2xl bg-white/[0.06] border border-white/15 rounded-3xl p-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] space-y-1.5">
+        {/* Center Pill Status + Remote Simulator Button */}
+        <div className="hidden md:flex items-center gap-2 bg-black/45 backdrop-blur-xl border border-white/15 px-3.5 py-1.5 rounded-full text-[11px] text-slate-200 shadow-lg">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="font-semibold text-white">Launcher Glass 26</span>
+          <span className="text-white/30">•</span>
+          <span className="text-cyan-300">Android 14 TV</span>
+          <button
+            onClick={() => setShowVirtualRemote((prev) => !prev)}
+            className={`ml-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 transition cursor-pointer ${
+              showVirtualRemote
+                ? 'bg-cyan-400 text-slate-950'
+                : 'bg-white/10 hover:bg-white/20 text-cyan-300 border border-cyan-400/30'
+            }`}
+          >
+            <Gamepad className="w-3 h-3" />
+            <span>{showVirtualRemote ? 'Ocultar Controle' : 'Simular Controle TV'}</span>
+          </button>
+          <button
+            onClick={() => setSoundEnabled((prev) => !prev)}
+            className="p-1 text-slate-300 hover:text-white cursor-pointer"
+            title="Som de navegação do controle"
+          >
+            {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-cyan-400" /> : <VolumeX className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {/* Top Right Icons: Search, Wi-Fi, User Profile (Exato como na foto) */}
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <button
+            id="tv-focus-top-search"
+            onClick={() => {
+              setFocusedId('top-search');
+              setIsSearchOpen(true);
+            }}
+            onMouseEnter={() => setFocusedId('top-search')}
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              focusedId === 'top-search'
+                ? 'bg-white/25 ring-2 ring-cyan-300 shadow-[0_0_20px_rgba(56,189,248,0.8)] scale-110'
+                : 'bg-white/10 hover:bg-white/20 border border-white/15'
+            }`}
+            title="Pesquisar na TV"
+          >
+            <Search className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+          </button>
+
+          <button
+            id="tv-focus-top-wifi"
+            onClick={() => {
+              setFocusedId('top-wifi');
+              executeRemoteCommand('Enter');
+            }}
+            onMouseEnter={() => setFocusedId('top-wifi')}
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              focusedId === 'top-wifi'
+                ? 'bg-white/25 ring-2 ring-cyan-300 shadow-[0_0_20px_rgba(56,189,248,0.8)] scale-110'
+                : 'bg-white/10 hover:bg-white/20 border border-white/15'
+            }`}
+            title="Wi-Fi Conectado (192.168.0.117)"
+          >
+            <Wifi className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+          </button>
+
+          <button
+            id="tv-focus-top-profile"
+            onClick={() => {
+              setFocusedId('top-profile');
+              triggerToast('👤 Perfil Century TV Stick (Android 14 • 2GB RAM Otimizado)');
+            }}
+            onMouseEnter={() => setFocusedId('top-profile')}
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-b from-blue-400 to-blue-600 flex items-center justify-center border border-white/40 transition-all cursor-pointer ${
+              focusedId === 'top-profile'
+                ? 'ring-2 ring-cyan-300 shadow-[0_0_22px_rgba(56,189,248,0.9)] scale-110'
+                : 'shadow-md'
+            }`}
+            title="Perfil do Usuário"
+          >
+            <div className="w-4 h-4 rounded-full bg-white/90 flex items-center justify-center text-[10px] font-black text-blue-700">
+              S
+            </div>
+          </button>
+
+          <button
+            id="tv-focus-top-fullscreen"
+            onClick={() => {
+              setFocusedId('top-fullscreen');
+              toggleFullscreen();
+            }}
+            onMouseEnter={() => setFocusedId('top-fullscreen')}
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              focusedId === 'top-fullscreen'
+                ? 'bg-white/25 ring-2 ring-cyan-300 shadow-[0_0_20px_rgba(56,189,248,0.8)] scale-110'
+                : 'bg-white/10 hover:bg-white/20 border border-white/15 text-cyan-300'
+            }`}
+            title={isFullscreen ? 'Sair da Tela Cheia' : 'Expandir Modo TV'}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* MAIN BODY: LEFT GLASS DOCK + RIGHT CONTENT AREA                           */}
+      {/* ========================================================================= */}
+      <div className="relative z-10 flex-1 flex flex-col lg:flex-row gap-5 px-5 sm:px-8 pb-6 pt-1 overflow-y-auto no-scrollbar">
+        {/* ======================================================================= */}
+        {/* LEFT FLOATING GLASS DOCK (Cápsula de Vidro Líquido idêntica à foto)     */}
+        {/* ======================================================================= */}
+        <aside className="w-full lg:w-52 shrink-0 flex flex-col justify-center">
+          <nav className="backdrop-blur-2xl bg-white/[0.06] border border-white/20 rounded-[28px] p-2.5 shadow-[0_16px_40px_rgba(0,0,0,0.65)] flex lg:flex-col gap-1.5 overflow-x-auto no-scrollbar">
             {dockItems.map((item) => {
               const Icon = item.icon;
-              const isActive = activeDock === item.id.replace('dock-', '');
+              const isActive = activeDock === item.key;
               const isFocused = focusedId === item.id;
 
               return (
                 <button
                   key={item.id}
+                  id={`tv-focus-${item.id}`}
                   onClick={() => {
                     playNavigationSound();
                     setFocusedId(item.id);
-                    const dockName = item.id.replace('dock-', '');
-                    setActiveDock(dockName);
-                    if (dockName === 'apps') setIsAppDrawerOpen(true);
-                    if (dockName === 'config' && onOpenTermuxGuide) onOpenTermuxGuide();
+                    setActiveDock(item.key);
+                    if (item.key === 'apps') {
+                      setDrawerFocusIdx(0);
+                      setIsAppDrawerOpen(true);
+                    } else if (item.key === 'config' && onOpenTermuxGuide) {
+                      onOpenTermuxGuide();
+                    }
                   }}
                   onMouseEnter={() => setFocusedId(item.id)}
-                  className={`w-full py-2.5 px-3.5 flex items-center gap-3 rounded-2xl transition-all duration-200 cursor-pointer text-left ${
-                    isActive
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-[0_0_25px_rgba(59,130,246,0.7)] border border-blue-400/60 font-bold'
-                      : 'text-slate-300 hover:text-white hover:bg-white/10 font-medium'
-                  } ${
-                    isFocused ? 'ring-2 ring-white scale-[1.03] shadow-lg' : ''
-                  }`}
+                  className={`py-2.5 px-3.5 rounded-2xl flex items-center gap-3 transition-all duration-200 cursor-pointer shrink-0 lg:w-full text-left relative ${
+                    isActive || isFocused
+                      ? 'bg-gradient-to-r from-[#2563eb]/80 via-[#1d4ed8]/65 to-[#1e3a8a]/50 text-white font-bold border border-cyan-300/80 shadow-[0_0_24px_rgba(56,189,248,0.55),inset_0_1px_8px_rgba(255,255,255,0.35)]'
+                      : 'text-slate-300/90 hover:text-white hover:bg-white/10 font-medium border border-transparent'
+                  } ${isFocused ? 'scale-[1.03] ring-2 ring-white/90' : ''}`}
                 >
-                  <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-slate-300'}`} />
-                  <span className="text-xs sm:text-sm tracking-tight truncate">
+                  <Icon
+                    className={`w-4 h-4 sm:w-5 sm:h-5 shrink-0 ${
+                      isActive || isFocused ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'text-slate-300'
+                    }`}
+                  />
+                  <span className="text-xs sm:text-sm tracking-tight whitespace-nowrap">
                     {item.label}
                   </span>
                 </button>
@@ -673,51 +1056,62 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenTermux
         </aside>
 
         {/* ======================================================================= */}
-        {/* MAIN TV SCREEN CONTENT (Hero + Seus Aplicativos + Continuar Assistindo)  */}
+        {/* RIGHT MAIN CONTENT (Hero + Widgets + 9 Apps + 5 Continue Watching)      */}
         {/* ======================================================================= */}
-        <main className="flex-1 flex flex-col justify-between overflow-y-auto no-scrollbar space-y-5">
-          
-          {/* Top Row: Hero Banner (Center) + Widgets (Right) */}
-          <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-            
-            {/* 1. Large Frosted Glass Spotlight Banner */}
+        <div className="flex-1 flex flex-col justify-between space-y-4 min-w-0">
+          {/* TOP SECTION: HERO BANNER + WEATHER & INPUTS WIDGETS */}
+          <div className="flex flex-col xl:flex-row gap-4 items-stretch">
+            {/* 1. Central Glass Hero Banner ("Descubra novos mundos") */}
             <div
-              id="hero-banner"
+              id="tv-focus-hero-banner"
               onClick={() => {
-                playNavigationSound();
-                triggerToast(`🚀 Abrindo ${carouselSlides[carouselIndex].title}...`);
-                window.open(carouselSlides[carouselIndex].actionUrl, '_blank');
+                setFocusedId('hero-banner');
+                const slide = carouselSlides[carouselIndex];
+                launchNativeOrSimulate(slide.title, slide.subtitle, slide.tag, slide.packagesCsv);
               }}
               onMouseEnter={() => setFocusedId('hero-banner')}
-              className={`flex-1 rounded-3xl border border-white/20 backdrop-blur-2xl bg-white/[0.08] p-5 sm:p-6 shadow-[0_12px_40px_rgba(0,0,0,0.5)] flex flex-col justify-between min-h-[175px] transition-all duration-200 cursor-pointer relative overflow-hidden ${
-                focusedId === 'hero-banner' ? 'ring-4 ring-blue-400 shadow-[0_0_35px_rgba(59,130,246,0.8)] scale-[1.01]' : ''
+              className={`flex-1 rounded-[28px] border backdrop-blur-2xl bg-gradient-to-br ${
+                carouselSlides[carouselIndex].bgAccent
+              } p-5 sm:p-7 flex flex-col justify-between min-h-[195px] sm:min-h-[215px] relative overflow-hidden transition-all duration-300 cursor-pointer ${
+                focusedId === 'hero-banner'
+                  ? 'border-cyan-300 ring-2 ring-cyan-300/90 shadow-[0_0_35px_rgba(56,189,248,0.65)] scale-[1.01]'
+                  : 'border-white/25 shadow-[0_16px_40px_rgba(0,0,0,0.55)]'
               }`}
             >
-              {/* Glass subtle shine highlight */}
-              <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+              {/* Scenic Mountain & Sunset reflection inside banner */}
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_75%_25%,rgba(255,140,80,0.32),transparent_60%)] pointer-events-none" />
+              <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/15 to-transparent pointer-events-none" />
 
-              <div className="space-y-1 relative z-10">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 bg-white/10 px-2.5 py-0.5 rounded-full border border-white/15">
+              <div className="relative z-10 space-y-1.5 max-w-lg">
+                <div className="text-[10px] sm:text-xs font-extrabold tracking-wider text-white/90 uppercase">
                   {carouselSlides[carouselIndex].tag}
-                </span>
-
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight drop-shadow-md">
+                </div>
+                <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight drop-shadow-md">
                   {carouselSlides[carouselIndex].title}
                 </h2>
-                <p className="text-xs sm:text-sm text-slate-300">
+                <p className="text-xs sm:text-sm text-slate-200/90 font-medium">
                   {carouselSlides[carouselIndex].subtitle}
                 </p>
               </div>
 
-              {/* Action Button & Carousel Dots */}
-              <div className="flex items-center justify-between pt-3 relative z-10">
-                <button className="flex items-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 text-white font-bold px-4 py-2 rounded-full text-xs transition shadow-lg">
+              <div className="relative z-10 flex items-center justify-between pt-4">
+                <div className="inline-flex items-center gap-2 bg-black/55 hover:bg-black/75 backdrop-blur-xl border border-white/30 text-white font-semibold px-4 py-2 rounded-full text-xs sm:text-sm shadow-lg transition">
                   <Play className="w-3.5 h-3.5 fill-white text-white" />
                   <span>{carouselSlides[carouselIndex].actionText}</span>
-                </button>
+                </div>
 
-                {/* 5 Dots Pagination */}
+                {/* Carousel Dots + Prev/Next controls */}
                 <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCarouselIndex((prev) => (prev - 1 + 5) % 5);
+                    }}
+                    className="p-1 rounded-full bg-black/30 hover:bg-white/20 text-white/70 hover:text-white cursor-pointer"
+                    title="Slide Anterior"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
                   {[0, 1, 2, 3, 4].map((dot) => (
                     <button
                       key={dot}
@@ -725,138 +1119,151 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenTermux
                         e.stopPropagation();
                         setCarouselIndex(dot);
                       }}
-                      className={`h-1.5 rounded-full transition-all ${
-                        dot === carouselIndex ? 'w-5 bg-white' : 'w-1.5 bg-white/40 hover:bg-white/70'
+                      className={`h-2 rounded-full transition-all cursor-pointer ${
+                        dot === carouselIndex ? 'w-5 bg-white shadow-[0_0_8px_#fff]' : 'w-2 bg-white/40 hover:bg-white/70'
                       }`}
                     />
                   ))}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCarouselIndex((prev) => (prev + 1) % 5);
+                    }}
+                    className="p-1 rounded-full bg-black/30 hover:bg-white/20 text-white/70 hover:text-white cursor-pointer"
+                    title="Próximo Slide"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* 2. Right Side: Weather & Inputs Widgets */}
-            <div className="w-full lg:w-48 shrink-0 flex flex-col gap-3">
-              
-              {/* Top Controls: Search, Wi-Fi, Profile Avatar */}
-              <div className="flex items-center justify-end gap-2.5 pb-1">
-                <button
-                  onClick={() => triggerToast('🔍 Busca por voz e texto ativa no Century TV Stick.')}
-                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white transition cursor-pointer"
-                  title="Pesquisar"
-                >
-                  <Search className="w-4 h-4" />
-                </button>
-
-                <div className="p-2 rounded-full bg-white/10 border border-white/15 text-white" title="Wi-Fi 5GHz Excelente">
-                  <Wifi className="w-4 h-4" />
-                </div>
-
-                <div 
-                  className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/30 cursor-pointer"
-                  title="Perfil Century TV"
-                >
-                  S
-                </div>
-
-                <button
-                  onClick={toggleFullscreen}
-                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-cyan-400 transition cursor-pointer"
-                  title={isFullscreen ? 'Sair da Tela Cheia' : 'Tela Cheia'}
-                >
-                  {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                </button>
-              </div>
-
-              {/* Weather Widget */}
+            {/* 2. Right Widgets Column: Weather (São Paulo 18°) & Entradas (HDMI 1) */}
+            <div className="w-full xl:w-56 shrink-0 grid grid-cols-2 xl:grid-cols-1 gap-3">
+              {/* Weather Glass Card */}
               <div
-                id="widget-weather"
-                onClick={() => triggerToast('⛅ Previsão: Céu Limpo em São Paulo, 18°C.')}
+                id="tv-focus-widget-weather"
+                onClick={() => {
+                  setFocusedId('widget-weather');
+                  triggerToast('🌕 Clima em São Paulo: 18°C • Céu Limpo');
+                }}
                 onMouseEnter={() => setFocusedId('widget-weather')}
-                className={`rounded-2xl border border-white/20 backdrop-blur-2xl bg-white/[0.08] p-3 shadow-lg flex items-center justify-between transition-all cursor-pointer ${
-                  focusedId === 'widget-weather' ? 'ring-2 ring-blue-400 scale-[1.03]' : ''
+                className={`rounded-[24px] border backdrop-blur-2xl bg-white/[0.08] p-4 flex items-center justify-between transition-all cursor-pointer ${
+                  focusedId === 'widget-weather'
+                    ? 'border-cyan-300 ring-2 ring-cyan-300 shadow-[0_0_28px_rgba(56,189,248,0.65)] scale-[1.03]'
+                    : 'border-white/20 shadow-lg hover:border-white/35'
                 }`}
               >
-                <div className="w-10 h-10 rounded-full bg-slate-200/90 flex items-center justify-center text-slate-800 text-lg shadow-inner font-bold">
-                  🌕
+                {/* 3D Full Moon sphere matching screenshot */}
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-slate-100 via-slate-300 to-slate-500 shadow-[inset_-6px_-6px_12px_rgba(0,0,0,0.45),0_0_20px_rgba(255,255,255,0.35)] flex items-center justify-center relative overflow-hidden shrink-0">
+                  <div className="w-3 h-3 rounded-full bg-slate-400/50 absolute top-2.5 left-3" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-slate-400/40 absolute bottom-3 right-3" />
                 </div>
+
                 <div className="text-right">
-                  <div className="text-[10px] text-slate-300 font-medium">São Paulo</div>
-                  <div className="text-xl font-extrabold text-white leading-none">18°</div>
-                  <div className="text-[10px] text-slate-400">Céu Limpo</div>
+                  <div className="text-[11px] text-slate-200 font-medium">São Paulo</div>
+                  <div className="text-2xl sm:text-3xl font-bold text-white leading-tight">18°</div>
+                  <div className="text-[11px] text-slate-300/90">Céu Limpo</div>
                 </div>
               </div>
 
-              {/* Inputs / Entradas Widget */}
+              {/* Entradas HDMI 1 Glass Card */}
               <div
-                id="widget-hdmi"
-                onClick={() => triggerToast('🔌 Entrada: Century Stick conectado no HDMI 1.')}
+                id="tv-focus-widget-hdmi"
+                onClick={() => {
+                  setFocusedId('widget-hdmi');
+                  triggerToast('🔌 Entrada HDMI 1: Century TV Stick (Sinal 4K HDR Ativo)');
+                }}
                 onMouseEnter={() => setFocusedId('widget-hdmi')}
-                className={`rounded-2xl border border-white/20 backdrop-blur-2xl bg-white/[0.08] p-3 shadow-lg flex items-center justify-between transition-all cursor-pointer ${
-                  focusedId === 'widget-hdmi' ? 'ring-2 ring-blue-400 scale-[1.03]' : ''
+                className={`rounded-[24px] border backdrop-blur-2xl bg-white/[0.08] p-4 flex items-center justify-between transition-all cursor-pointer ${
+                  focusedId === 'widget-hdmi'
+                    ? 'border-cyan-300 ring-2 ring-cyan-300 shadow-[0_0_28px_rgba(56,189,248,0.65)] scale-[1.03]'
+                    : 'border-white/20 shadow-lg hover:border-white/35'
                 }`}
               >
-                <div className="space-y-0.5">
-                  <div className="text-[9px] text-slate-400 uppercase tracking-widest">— Entradas —</div>
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-white">
-                    <Monitor className="w-3.5 h-3.5 text-cyan-400" />
+                <div className="space-y-1">
+                  <div className="text-[10px] text-slate-300/80 font-medium flex items-center gap-1">
+                    <span>──</span>
+                    <span>Entradas</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-white">
+                    <Monitor className="w-4 h-4 text-slate-200" />
                     <span>HDMI 1</span>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
+                <ChevronRight className="w-4 h-4 text-slate-300" />
               </div>
-
             </div>
           </div>
 
-          {/* ======================================================================= */}
-          {/* MIDDLE ROW: "Seus Aplicativos" (9 Squircle Glass Icons)                 */}
-          {/* ======================================================================= */}
+          {/* ===================================================================== */}
+          {/* MIDDLE ROW: "Seus Aplicativos" (9 Squircle Glass Cards in 1 Row)      */}
+          {/* ===================================================================== */}
           <div className="space-y-2">
-            <h3 className="text-xs sm:text-sm font-bold text-slate-200 tracking-wide">
-              Seus Aplicativos
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs sm:text-sm font-bold text-white/95 tracking-wide">
+                Seus Aplicativos
+              </h3>
+              {activeDock !== 'inicio' && (
+                <span className="text-[11px] text-cyan-300 font-semibold">
+                  Filtro ativo: {dockItems.find((d) => d.key === activeDock)?.label}
+                </span>
+              )}
+            </div>
 
-            {/* Horizontal 9 App Icons Row matching the screenshot */}
-            <div className="grid grid-cols-5 sm:grid-cols-9 gap-2.5 sm:gap-3">
+            <div className="grid grid-cols-9 gap-2 sm:gap-3 pt-1">
               {appList.map((app) => {
                 const isFocused = focusedId === app.id;
+                const isDimmed =
+                  activeDock !== 'inicio' &&
+                  activeDock !== 'apps' &&
+                  activeDock !== 'config' &&
+                  app.category !== activeDock;
+
                 return (
                   <div
                     key={app.id}
+                    id={`tv-focus-${app.id}`}
                     onClick={() => {
                       playNavigationSound();
                       setFocusedId(app.id);
-                      triggerToast(`🚀 Abrindo ${app.name} no Century TV Stick...`);
-                      if (app.webUrl && app.webUrl !== '#') {
-                        window.open(app.webUrl, '_blank');
-                      } else {
-                        setIsAppDrawerOpen(true);
-                      }
+                      launchNativeOrSimulate(app.name, app.description, app.name, app.packagesCsv);
                     }}
                     onMouseEnter={() => setFocusedId(app.id)}
-                    className="flex flex-col items-center gap-1.5 cursor-pointer group"
+                    className={`flex flex-col items-center gap-1.5 cursor-pointer transition-opacity ${
+                      isDimmed ? 'opacity-40' : 'opacity-100'
+                    }`}
                   >
-                    {/* Glass 3D Squircle Container */}
                     <div
-                      className={`w-full aspect-square rounded-2xl sm:rounded-3xl p-3 flex items-center justify-center transition-all duration-200 relative overflow-hidden bg-gradient-to-br ${app.bgGradient} border border-white/20 shadow-lg ${
+                      className={`w-full aspect-square rounded-[20px] sm:rounded-[24px] flex items-center justify-center relative overflow-hidden bg-gradient-to-b ${
+                        app.bgGradient
+                      } transition-all duration-200 ${
                         isFocused
-                          ? 'ring-4 ring-blue-400 shadow-[0_0_35px_rgba(59,130,246,0.9)] scale-110 -translate-y-1 z-20'
-                          : 'group-hover:scale-105 group-hover:border-white/40'
+                          ? 'border-2 border-cyan-200 ring-2 ring-cyan-400/90 shadow-[0_0_32px_rgba(56,189,248,0.95)] scale-110 -translate-y-1 z-20'
+                          : 'border border-white/20 shadow-[0_8px_20px_rgba(0,0,0,0.6)] hover:border-white/40'
                       }`}
                     >
-                      {/* Glossy liquid glass reflection top overlay */}
-                      <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/25 via-white/5 to-transparent pointer-events-none rounded-t-2xl" />
+                      {/* Top glass specular highlight */}
+                      <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/20 via-white/5 to-transparent pointer-events-none" />
 
-                      {/* App Logo */}
-                      <div className="relative z-10 flex items-center justify-center">
+                      {/* Bottom inner glow */}
+                      <div
+                        className="absolute inset-0 opacity-35 pointer-events-none"
+                        style={{
+                          background: `radial-gradient(circle at 50% 85%, ${app.accentGlow}, transparent 70%)`,
+                        }}
+                      />
+
+                      <div className="relative z-10 flex items-center justify-center p-1">
                         {app.renderLogo()}
                       </div>
                     </div>
 
-                    {/* App Text Label underneath */}
-                    <span className={`text-[10px] sm:text-[11px] truncate max-w-[70px] text-center font-medium transition-colors ${
-                      isFocused ? 'text-cyan-300 font-bold' : 'text-slate-300'
-                    }`}>
+                    <span
+                      className={`text-[9px] sm:text-[11px] truncate max-w-full text-center transition-colors ${
+                        isFocused ? 'text-white font-bold drop-shadow' : 'text-slate-300/90 font-medium'
+                      }`}
+                    >
                       {app.label}
                     </span>
                   </div>
@@ -865,54 +1272,71 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenTermux
             </div>
           </div>
 
-          {/* ======================================================================= */}
-          {/* BOTTOM ROW: "Continuar assistindo" (Cards com barra de progresso)       */}
-          {/* ======================================================================= */}
-          <div className="space-y-2 pt-1">
-            <h3 className="text-xs sm:text-sm font-bold text-slate-200 tracking-wide">
+          {/* ===================================================================== */}
+          {/* BOTTOM ROW: "Continuar assistindo" (5 Landscape Cards with Progress)  */}
+          {/* ===================================================================== */}
+          <div className="space-y-2">
+            <h3 className="text-xs sm:text-sm font-bold text-white/95 tracking-wide">
               Continuar assistindo
             </h3>
 
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="grid grid-cols-5 gap-2.5 sm:gap-3.5">
               {continueWatchingList.map((item) => {
                 const isFocused = focusedId === item.id;
                 return (
                   <div
                     key={item.id}
+                    id={`tv-focus-${item.id}`}
                     onClick={() => {
                       playNavigationSound();
                       setFocusedId(item.id);
-                      triggerToast(`▶ Continuando ${item.title}...`);
-                      window.open(item.webUrl, '_blank');
+                      launchNativeOrSimulate(
+                        item.title,
+                        item.subtitle,
+                        item.provider,
+                        item.packagesCsv,
+                        item.progress
+                      );
                     }}
                     onMouseEnter={() => setFocusedId(item.id)}
-                    className={`rounded-2xl border border-white/15 bg-gradient-to-b ${item.bgImage} overflow-hidden shadow-lg transition-all duration-200 cursor-pointer relative flex flex-col justify-between h-28 sm:h-32 p-3 ${
+                    className={`rounded-[20px] sm:rounded-[22px] bg-gradient-to-br ${
+                      item.bgGradient
+                    } overflow-hidden relative flex flex-col justify-between h-24 sm:h-32 p-2.5 sm:p-3.5 cursor-pointer transition-all duration-200 ${
                       isFocused
-                        ? 'ring-4 ring-blue-400 shadow-[0_0_30px_rgba(59,130,246,0.85)] scale-105 z-20 -translate-y-1'
-                        : 'hover:border-white/40'
+                        ? 'border-2 border-cyan-300 ring-2 ring-cyan-400/80 shadow-[0_0_30px_rgba(56,189,248,0.85)] scale-[1.04] -translate-y-1 z-20'
+                        : 'border border-white/15 shadow-[0_10px_24px_rgba(0,0,0,0.65)] hover:border-white/35'
                     }`}
                   >
-                    {/* Badge top tag */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded text-slate-300 font-medium">
-                        {item.badge}
+                    {/* Top glass sheen */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-white/10 pointer-events-none" />
+
+                    {/* Top metadata */}
+                    <div className="relative z-10 flex items-center justify-between">
+                      <span className="text-[8px] sm:text-[9px] bg-black/50 backdrop-blur-md px-2 py-0.5 rounded-full text-slate-200 border border-white/10 truncate">
+                        {item.durationRestante}
                       </span>
-                      <span className="text-[8px] text-slate-400">{item.category}</span>
                     </div>
 
-                    {/* Title & Provider Logo */}
-                    <div>
-                      <div className="text-xs sm:text-sm font-extrabold text-white truncate drop-shadow">
-                        {item.title}
-                      </div>
-                      <div className={item.providerColor}>
-                        {item.provider}
+                    {/* Poster Stylized Title & Provider Logo */}
+                    <div className="relative z-10 space-y-1.5">
+                      <div className="flex items-end justify-between gap-1">
+                        <div className="min-w-0">
+                          <div className="text-[10px] sm:text-xs font-black text-white tracking-wide uppercase truncate drop-shadow">
+                            {item.title}
+                          </div>
+                          <div className="text-[8px] sm:text-[10px] text-slate-300 truncate hidden sm:block">
+                            {item.subtitle}
+                          </div>
+                        </div>
+                        <span className={`text-[8px] sm:text-[10px] shrink-0 ${item.providerBadgeClass}`}>
+                          {item.provider}
+                        </span>
                       </div>
 
-                      {/* Progress Bar (Exata do print) */}
-                      <div className="w-full bg-white/20 h-1 rounded-full overflow-hidden mt-1.5">
+                      {/* Glowing Blue Progress Bar matching screenshot */}
+                      <div className="w-full bg-white/20 h-1 rounded-full overflow-hidden">
                         <div
-                          className="bg-blue-500 h-full rounded-full shadow-[0_0_8px_#3b82f6]"
+                          className="bg-gradient-to-r from-cyan-400 to-blue-500 h-full rounded-full shadow-[0_0_8px_#38bdf8]"
                           style={{ width: `${item.progress}%` }}
                         />
                       </div>
@@ -922,25 +1346,210 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenTermux
               })}
             </div>
           </div>
-
-        </main>
+        </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* FLOATING ACTION TOAST                                                     */}
+      {/* VIRTUAL TV REMOTE SIMULATOR (Para testar tudo na tela sem erros)          */}
       {/* ========================================================================= */}
-      {toastMessage && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-cyan-400 text-white px-5 py-2.5 rounded-2xl shadow-2xl backdrop-blur-md flex items-center gap-2 text-xs font-bold animate-bounce">
-          <Sparkles className="w-4 h-4 text-cyan-400" />
-          <span>{toastMessage}</span>
+      {showVirtualRemote && (
+        <div className="absolute bottom-4 right-4 z-40 w-52 bg-slate-950/95 backdrop-blur-2xl border border-cyan-500/40 rounded-3xl p-4 shadow-[0_20px_50px_rgba(0,0,0,0.9)] space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-1.5">
+              <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+              <span className="text-[11px] font-bold text-white">Controle Century TV</span>
+            </div>
+            <button
+              onClick={() => setShowVirtualRemote(false)}
+              className="text-slate-400 hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* D-Pad Circle */}
+          <div className="relative w-32 h-32 mx-auto rounded-full bg-slate-900 border-2 border-slate-700 flex items-center justify-center shadow-inner">
+            <button
+              onClick={() => executeRemoteCommand('ArrowUp')}
+              className="absolute top-1.5 left-1/2 -translate-x-1/2 px-3 py-1 text-xs font-bold text-slate-200 hover:text-cyan-400 active:scale-90 cursor-pointer"
+              title="Cima"
+            >
+              ▲
+            </button>
+            <button
+              onClick={() => executeRemoteCommand('ArrowDown')}
+              className="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-3 py-1 text-xs font-bold text-slate-200 hover:text-cyan-400 active:scale-90 cursor-pointer"
+              title="Baixo"
+            >
+              ▼
+            </button>
+            <button
+              onClick={() => executeRemoteCommand('ArrowLeft')}
+              className="absolute left-1.5 top-1/2 -translate-y-1/2 px-2 py-2 text-xs font-bold text-slate-200 hover:text-cyan-400 active:scale-90 cursor-pointer"
+              title="Esquerda"
+            >
+              ◄
+            </button>
+            <button
+              onClick={() => executeRemoteCommand('ArrowRight')}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-2 text-xs font-bold text-slate-200 hover:text-cyan-400 active:scale-90 cursor-pointer"
+              title="Direita"
+            >
+              ►
+            </button>
+            <button
+              onClick={() => executeRemoteCommand('Enter')}
+              className="w-12 h-12 rounded-full bg-gradient-to-b from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs shadow-[0_0_15px_rgba(6,182,212,0.6)] active:scale-95 cursor-pointer"
+            >
+              OK
+            </button>
+          </div>
+
+          {/* Bottom Remote Action Keys */}
+          <div className="grid grid-cols-3 gap-1.5 text-[10px]">
+            <button
+              onClick={() => executeRemoteCommand('Escape')}
+              className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 py-1.5 rounded-xl font-semibold cursor-pointer"
+            >
+              ↩ Voltar
+            </button>
+            <button
+              onClick={() => executeRemoteCommand('Home')}
+              className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-300 py-1.5 rounded-xl font-bold cursor-pointer"
+            >
+              🏠 Home
+            </button>
+            <button
+              onClick={() => {
+                setDrawerFocusIdx(0);
+                setIsAppDrawerOpen(true);
+              }}
+              className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 py-1.5 rounded-xl font-semibold cursor-pointer"
+            >
+              ⊞ Apps
+            </button>
+          </div>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* APP DRAWER MODAL                                                          */}
+      {/* INTERACTIVE STREAMING / APP SIMULATOR MODAL (Evita erro de navegador)     */}
+      {/* ========================================================================= */}
+      {activePlayerModal && (
+        <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-cyan-500/40 rounded-3xl p-6 max-w-lg w-full shadow-[0_0_50px_rgba(6,182,212,0.3)] space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 text-xs font-extrabold border border-cyan-500/30">
+                  {activePlayerModal.provider}
+                </span>
+                <span className="text-xs text-emerald-400 flex items-center gap-1 font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>4K HDR • 60 FPS</span>
+                </span>
+              </div>
+              <button
+                onClick={() => setActivePlayerModal(null)}
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 py-2">
+              <h3 className="text-2xl font-extrabold text-white">{activePlayerModal.title}</h3>
+              <p className="text-sm text-slate-300">{activePlayerModal.subtitle}</p>
+              <div className="flex items-center gap-2 text-xs text-slate-400 pt-1">
+                <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Pacote Android TV: <code className="text-cyan-300">{activePlayerModal.packagesCsv.split(',')[0]}</code></span>
+              </div>
+            </div>
+
+            {typeof activePlayerModal.progress === 'number' && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs text-slate-300">
+                  <span>Progresso salvo</span>
+                  <span>{activePlayerModal.progress}% concluído</span>
+                </div>
+                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-cyan-400 to-blue-500 h-full rounded-full"
+                    style={{ width: `${activePlayerModal.progress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 text-xs text-slate-300">
+              Na sua <strong>Century TV Stick (Android 14)</strong>, clicar neste card abre diretamente o aplicativo nativo instalado na TV via <code className="text-cyan-300">Leanback Launch Intent</code>, sem precisar de navegador web.
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-1">
+              <button
+                onClick={() => setActivePlayerModal(null)}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 cursor-pointer"
+              >
+                Voltar para a Launcher (OK / Back)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SEARCH MODAL                                                              */}
+      {/* ========================================================================= */}
+      {isSearchOpen && (
+        <div className="absolute inset-0 z-50 bg-black/85 backdrop-blur-xl flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/20 rounded-3xl p-6 max-w-xl w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Search className="w-4 h-4 text-cyan-400" />
+                <span>Pesquisa Rápida na Century TV</span>
+              </h3>
+              <button
+                onClick={() => setIsSearchOpen(false)}
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <input
+              type="text"
+              autoFocus
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar filmes, séries ou aplicativos..."
+              className="w-full bg-slate-950 border border-cyan-500/50 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none"
+            />
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+              {appList
+                .filter((a) => a.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map((app) => (
+                  <button
+                    key={app.id}
+                    onClick={() => {
+                      setIsSearchOpen(false);
+                      launchNativeOrSimulate(app.name, app.description, app.name, app.packagesCsv);
+                    }}
+                    className="bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl p-2.5 text-left text-xs font-bold text-white flex items-center justify-between cursor-pointer"
+                  >
+                    <span>{app.name}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-cyan-400" />
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* APP DRAWER MODAL (100% Navegável pelo Controle Remoto D-Pad)              */}
       {/* ========================================================================= */}
       {isAppDrawerOpen && (
-        <div className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-6">
+        <div className="absolute inset-0 z-50 bg-black/85 backdrop-blur-xl flex items-center justify-center p-4 sm:p-6">
           <div className="bg-slate-900 border border-white/20 rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
@@ -948,56 +1557,58 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenTermux
                   <Grid className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">Aplicativos Instalados</h3>
-                  <p className="text-[11px] text-slate-400">Century TV Stick (2GB RAM)</p>
+                  <h3 className="font-bold text-white text-base">Todos os Aplicativos (Android 14 TV)</h3>
+                  <p className="text-[11px] text-slate-400">
+                    Use as setas do controle e OK para abrir • Century TV Stick
+                  </p>
                 </div>
               </div>
               <button
                 onClick={() => setIsAppDrawerOpen(false)}
-                className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-[350px] overflow-y-auto no-scrollbar">
-              {[
-                { name: 'Century Canais Ao Vivo', icon: '📡', tag: 'TV Aberta' },
-                { name: 'Stremio 4K', icon: '🔮', tag: 'Streaming' },
-                { name: 'SmartTube Next', icon: '🛡️', tag: 'Sem Anúncios' },
-                { name: 'Plex Media', icon: '🎞️', tag: 'Mídia Local' },
-                { name: 'RetroArch', icon: '🕹️', tag: 'Emulador' },
-                { name: 'Spotify TV', icon: '🎵', tag: 'Música' },
-                { name: 'Navegador Web', icon: '🌐', tag: 'Internet' },
-                { name: 'Configurações Century', icon: '⚙️', tag: 'Sistema' },
-              ].map((app, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    triggerToast(`🚀 Abrindo ${app.name}...`);
-                    setIsAppDrawerOpen(false);
-                  }}
-                  className="bg-slate-950/80 hover:bg-blue-600/20 border border-slate-800 hover:border-blue-400 rounded-2xl p-3 text-center space-y-1 transition-all cursor-pointer"
-                >
-                  <div className="text-3xl mx-auto">{app.icon}</div>
-                  <div className="text-xs font-bold text-white truncate">{app.name}</div>
-                  <div className="text-[10px] text-slate-400">{app.tag}</div>
-                </button>
-              ))}
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setIsAppDrawerOpen(false)}
-                className="text-cyan-400 text-xs font-bold hover:underline"
-              >
-                Fechar
-              </button>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-[340px] overflow-y-auto no-scrollbar p-1">
+              {drawerApps.map((app, idx) => {
+                const isSelected = drawerFocusIdx === idx;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setDrawerFocusIdx(idx);
+                      setIsAppDrawerOpen(false);
+                      launchNativeOrSimulate(app.name, app.tag, app.name, app.pkg);
+                    }}
+                    onMouseEnter={() => setDrawerFocusIdx(idx)}
+                    className={`rounded-2xl p-3 text-center space-y-1 transition-all cursor-pointer border ${
+                      isSelected
+                        ? 'bg-blue-600/30 border-cyan-300 ring-2 ring-cyan-300 scale-105 shadow-[0_0_20px_rgba(56,189,248,0.6)]'
+                        : 'bg-slate-950/80 border-slate-800 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="text-2xl mx-auto">{app.icon}</div>
+                    <div className="text-xs font-bold text-white truncate">{app.name}</div>
+                    <div className="text-[10px] text-cyan-300/80">{app.tag}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
       )}
 
+      {/* ========================================================================= */}
+      {/* FLOATING TOAST FEEDBACK                                                   */}
+      {/* ========================================================================= */}
+      {toastMessage && (
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-50 bg-slate-950/95 border border-cyan-400/80 text-white px-5 py-2.5 rounded-full shadow-[0_0_30px_rgba(6,182,212,0.5)] backdrop-blur-xl flex items-center gap-2 text-xs font-bold">
+          <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 };

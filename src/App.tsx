@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { CustomTvLauncher } from './components/CustomTvLauncher';
 import { TermuxQuickStart } from './components/TermuxQuickStart';
@@ -9,6 +9,30 @@ import { Terminal, Sparkles, Tv, Zap, MessageSquare } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('launcher_view');
+  const [isNativeTvMode, setIsNativeTvMode] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hasBridge = typeof (window as unknown as { AndroidTV?: unknown }).AndroidTV !== 'undefined';
+    if (params.get('tv') === '1' || hasBridge) {
+      setIsNativeTvMode(true);
+    }
+  }, []);
+
+  // When running inside the compiled Android 14 TV APK, render pure Fullscreen TV Launcher
+  if (isNativeTvMode) {
+    return (
+      <div className="w-screen h-screen overflow-hidden bg-[#04060e]">
+        <CustomTvLauncher
+          defaultFullscreen={true}
+          onOpenTermuxGuide={() => {
+            setIsNativeTvMode(false);
+            setActiveTab('termux');
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#050711] text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950">
@@ -26,21 +50,30 @@ export default function App() {
                 </div>
                 <div>
                   <h2 className="text-sm sm:text-base font-bold text-white">
-                    Sua Nova Launcher Neon Glass (Century TV Stick 2GB)
+                    Launcher Glass 26 • Century TV Stick (Android 14)
                   </h2>
                   <p className="text-[11px] text-slate-400">
-                    Réplica fiel do print do vídeo com navegação via controle remoto, atalhos de streaming e perfil personalizável.
+                    Use as setas do teclado ou clique em &quot;Simular Controle TV&quot; na barra superior da Launcher para testar toda a navegação.
                   </p>
                 </div>
               </div>
 
-              <button
-                onClick={() => setActiveTab('termux')}
-                className="flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs shadow-md shadow-cyan-500/20 cursor-pointer shrink-0"
-              >
-                <Terminal className="w-3.5 h-3.5" />
-                <span>Instalar no Century via Termux</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setIsNativeTvMode(true)}
+                  className="flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 font-bold px-3.5 py-2 rounded-xl text-xs cursor-pointer transition"
+                >
+                  <Tv className="w-3.5 h-3.5" />
+                  <span>Modo APK Tela Cheia</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('termux')}
+                  className="flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs shadow-md shadow-cyan-500/20 cursor-pointer"
+                >
+                  <Terminal className="w-3.5 h-3.5" />
+                  <span>Instalar no Century via Termux</span>
+                </button>
+              </div>
             </div>
 
             {/* The Actual Custom Launcher */}
@@ -111,7 +144,7 @@ export default function App() {
       <footer className="bg-slate-900/60 border-t border-slate-800/80 py-5 text-xs text-slate-500 text-center">
         <div className="max-w-6xl mx-auto px-4 space-y-1">
           <p>
-            Century TV Stick (2GB RAM) • Custom Smart TV Launcher estilo Neon Glass • Google Gemini 3.8 Flash
+            Century TV Stick (Android 14 • 2GB RAM) • Launcher Glass 26 Oficial
           </p>
         </div>
       </footer>

@@ -47,7 +47,7 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Gerar Projeto Nativo Android 14 TV
+      - name: Gerar Projeto Nativo Android 14 TV (Zero Conflitos de Dependência)
         run: |
           mkdir -p android/app/src/main/java/com/sdneysantos/launcherglass
           mkdir -p android/app/src/main/res/values
@@ -56,6 +56,14 @@ jobs:
 
           # Copiar o build do frontend para os assets do APK
           cp -r dist/* android/app/src/main/assets/
+
+          # Configurar gradle.properties (Evita erro de AndroidX e acelera compilação)
+          cat << 'EOF' > android/gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.enableJetifier=true
+          android.nonTransitiveRClass=true
+          EOF
 
           # Configurar settings.gradle
           cat << 'EOF' > android/settings.gradle
@@ -82,7 +90,7 @@ jobs:
           }
           EOF
 
-          # Configurar app/build.gradle direcionado para Android 14 TV (API 34)
+          # Configurar app/build.gradle direcionado para Android 14 TV (API 34) sem dependências externas pesadas
           cat << 'EOF' > android/app/build.gradle
           apply plugin: 'com.android.application'
 
@@ -94,8 +102,8 @@ jobs:
                   applicationId "com.sdneysantos.launcherglass"
                   minSdk 21
                   targetSdk 34
-                  versionCode 1
-                  versionName "1.0.0"
+                  versionCode 2
+                  versionName "1.1.0"
               }
 
               buildTypes {
@@ -116,8 +124,7 @@ jobs:
           }
 
           dependencies {
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-              implementation 'androidx.webkit:webkit:1.9.0'
+              // Zero dependências externas: usa 100% APIs nativas do Android 14 SDK para leveza máxima em 2GB RAM
           }
           EOF
 
@@ -129,6 +136,7 @@ jobs:
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
               <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
               <uses-feature android:name="android.software.leanback" android:required="false" />
               <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -138,11 +146,13 @@ jobs:
                   android:icon="@drawable/ic_launcher"
                   android:banner="@drawable/ic_launcher"
                   android:label="Launcher Glass 26"
-                  android:theme="@style/Theme.FullScreen"
+                  android:theme="@style/Theme.LauncherGlass"
                   android:hardwareAccelerated="true">
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
+                      android:launchMode="singleTask"
+                      android:stateNotNeeded="true"
                       android:screenOrientation="landscape"
                       android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize">
                       
@@ -164,20 +174,20 @@ jobs:
           </manifest>
           EOF
 
-          # Criar tema Dark Fullscreen
+          # Criar tema nativo Fullscreen sem depender de AppCompat
           cat << 'EOF' > android/app/src/main/res/values/styles.xml
           <resources>
-              <style name="Theme.FullScreen" parent="Theme.AppCompat.NoActionBar">
+              <style name="Theme.LauncherGlass" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
                   <item name="android:windowNoTitle">true</item>
                   <item name="android:windowActionBar">false</item>
                   <item name="android:windowFullscreen">true</item>
                   <item name="android:windowContentOverlay">@null</item>
-                  <item name="android:windowBackground">#050711</item>
+                  <item name="android:windowBackground">@android:color/black</item>
               </style>
           </resources>
           EOF
 
-          # Criar ícone da Launcher
+          # Criar ícone vetorial da Launcher
           cat << 'EOF' > android/app/src/main/res/drawable/ic_launcher.xml
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="108dp"
@@ -185,49 +195,117 @@ jobs:
               android:viewportWidth="108"
               android:viewportHeight="108">
               <path
+                  android:fillColor="#050711"
+                  android:pathData="M0,0h108v108h-108z"/>
+              <path
                   android:fillColor="#06b6d4"
-                  android:pathData="M20,20h68v68h-68z"/>
+                  android:pathData="M24,24h60v60h-60z"/>
           </vector>
           EOF
 
-          # Criar MainActivity.java otimizada para Century TV Stick (D-Pad + Android 14)
+          # Criar MainActivity.java 100% nativa com Ponte Android TV (Abre Apps reais na TV e funciona com D-Pad)
           cat << 'EOF' > android/app/src/main/java/com/sdneysantos/launcherglass/MainActivity.java
           package com.sdneysantos.launcherglass;
 
           import android.annotation.SuppressLint;
           import android.app.Activity;
           import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.graphics.Color;
           import android.net.Uri;
           import android.os.Bundle;
+          import android.provider.Settings;
           import android.view.KeyEvent;
+          import android.view.Window;
           import android.view.WindowManager;
+          import android.webkit.JavascriptInterface;
           import android.webkit.WebChromeClient;
           import android.webkit.WebResourceRequest;
           import android.webkit.WebResourceResponse;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
-          import androidx.webkit.WebViewAssetLoader;
-          import androidx.webkit.WebViewClientCompat;
+          import android.webkit.WebViewClient;
+          import java.io.InputStream;
 
           public class MainActivity extends Activity {
               private WebView webView;
-              private WebViewAssetLoader assetLoader;
+
+              public class AndroidTVBridge {
+                  @JavascriptInterface
+                  public boolean launchApp(String packageNamesCsv) {
+                      if (packageNamesCsv == null || packageNamesCsv.isEmpty()) return false;
+                      PackageManager pm = getPackageManager();
+                      String[] packages = packageNamesCsv.split(",");
+                      for (String rawPkg : packages) {
+                          String pkg = rawPkg.trim();
+                          if (pkg.isEmpty()) continue;
+                          try {
+                              Intent leanbackIntent = pm.getLeanbackLaunchIntentForPackage(pkg);
+                              if (leanbackIntent != null) {
+                                  leanbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                  startActivity(leanbackIntent);
+                                  return true;
+                              }
+                              Intent normalIntent = pm.getLaunchIntentForPackage(pkg);
+                              if (normalIntent != null) {
+                                  normalIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                  startActivity(normalIntent);
+                                  return true;
+                              }
+                          } catch (Exception ignored) {
+                          }
+                      }
+                      return false;
+                  }
+
+                  @JavascriptInterface
+                  public boolean openPlayStore(String packageName) {
+                      try {
+                          Intent marketIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + packageName));
+                          marketIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                          startActivity(marketIntent);
+                          return true;
+                      } catch (Exception e) {
+                          return false;
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public void openSettings() {
+                      try {
+                          Intent intent = new Intent(Settings.ACTION_SETTINGS);
+                          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                          startActivity(intent);
+                      } catch (Exception ignored) {
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public void openWifiSettings() {
+                      try {
+                          Intent intent = new Intent(Settings.ACTION_WIFI_SETTINGS);
+                          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                          startActivity(intent);
+                      } catch (Exception ignored) {
+                      }
+                  }
+              }
 
               @Override
-              @SuppressLint("SetJavaScriptEnabled")
+              @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
 
-                  // Manter tela ativa e cheia na TV
-                  getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                  requestWindowFeature(Window.FEATURE_NO_TITLE);
+                  getWindow().setFlags(
+                      WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                      WindowManager.LayoutParams.FLAG_FULLSCREEN
+                  );
                   getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
                   webView = new WebView(this);
+                  webView.setBackgroundColor(Color.parseColor("#04060e"));
                   setContentView(webView);
-
-                  assetLoader = new WebViewAssetLoader.Builder()
-                      .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
-                      .build();
 
                   WebSettings settings = webView.getSettings();
                   settings.setJavaScriptEnabled(true);
@@ -238,45 +316,61 @@ jobs:
                   settings.setMediaPlaybackRequiresUserGesture(false);
                   settings.setLoadsImagesAutomatically(true);
 
-                  // Foco e D-Pad nativos da Century TV
+                  webView.addJavascriptInterface(new AndroidTVBridge(), "AndroidTV");
+
                   webView.setFocusable(true);
                   webView.setFocusableInTouchMode(true);
                   webView.requestFocus();
 
-                  webView.setWebViewClient(new WebViewClientCompat() {
+                  webView.setWebViewClient(new WebViewClient() {
                       @Override
                       public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                          return assetLoader.shouldInterceptRequest(request.getUrl());
+                          Uri url = request.getUrl();
+                          if (url != null && "launcherglass.local".equals(url.getHost())) {
+                              String path = url.getPath();
+                              if (path == null || path.isEmpty() || "/".equals(path)) {
+                                  path = "index.html";
+                              } else if (path.startsWith("/")) {
+                                  path = path.substring(1);
+                              }
+                              try {
+                                  InputStream is = getAssets().open(path);
+                                  String mime = "text/html";
+                                  if (path.endsWith(".js")) mime = "application/javascript";
+                                  else if (path.endsWith(".css")) mime = "text/css";
+                                  else if (path.endsWith(".svg")) mime = "image/svg+xml";
+                                  else if (path.endsWith(".png")) mime = "image/png";
+                                  else if (path.endsWith(".jpg") || path.endsWith(".jpeg")) mime = "image/jpeg";
+                                  else if (path.endsWith(".webp")) mime = "image/webp";
+                                  else if (path.endsWith(".json")) mime = "application/json";
+                                  else if (path.endsWith(".woff2")) mime = "font/woff2";
+                                  return new WebResourceResponse(mime, "UTF-8", is);
+                              } catch (Exception e) {
+                                  return super.shouldInterceptRequest(view, request);
+                              }
+                          }
+                          return super.shouldInterceptRequest(view, request);
                       }
 
                       @Override
                       public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                           Uri url = request.getUrl();
-                          if (url.getHost() != null && url.getHost().equals("appassets.androidplatform.net")) {
+                          if (url != null && "launcherglass.local".equals(url.getHost())) {
                               return false;
                           }
-                          try {
-                              Intent intent = new Intent(Intent.ACTION_VIEW, url);
-                              startActivity(intent);
-                              return true;
-                          } catch (Exception e) {
-                              return false;
-                          }
+                          return true;
                       }
                   });
 
                   webView.setWebChromeClient(new WebChromeClient());
-                  webView.loadUrl("https://appassets.androidplatform.net/assets/index.html");
+                  webView.loadUrl("https://launcherglass.local/index.html?tv=1");
               }
 
               @Override
               public boolean onKeyDown(int keyCode, KeyEvent event) {
                   if (keyCode == KeyEvent.KEYCODE_BACK) {
-                      if (webView.canGoBack()) {
-                          webView.goBack();
-                          return true;
-                      }
-                      return true; // Não fecha a Launcher ao apertar voltar na tela inicial
+                      webView.evaluateJavascript("window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27 }));", null);
+                      return true;
                   }
                   return super.onKeyDown(keyCode, event);
               }
@@ -286,7 +380,7 @@ jobs:
       - name: Compilar APK Android 14 TV (Debug Assinado)
         run: |
           cd android
-          gradle assembleDebug --no-daemon
+          gradle assembleDebug --no-daemon --stacktrace
 
       - name: Preparar Arquivo APK Final
         run: |
