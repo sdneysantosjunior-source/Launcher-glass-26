@@ -47,17 +47,17 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Gerar Projeto Nativo Android 14 TV (Zero Conflitos de Dependência)
+      - name: Gerar Projeto Nativo Android 14 TV (Integrado com Apps e Watch Next)
         run: |
           mkdir -p android/app/src/main/java/com/sdneysantos/launcherglass
           mkdir -p android/app/src/main/res/values
           mkdir -p android/app/src/main/res/drawable
           mkdir -p android/app/src/main/assets
 
-          # Copiar o build do frontend para os assets do APK
+          # Copiar o build do frontend (incluindo assets/launcher/*) para os assets do APK
           cp -r dist/* android/app/src/main/assets/
 
-          # Configurar gradle.properties (Evita erro de AndroidX e acelera compilação)
+          # Configurar gradle.properties
           cat << 'EOF' > android/gradle.properties
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
@@ -90,7 +90,7 @@ jobs:
           }
           EOF
 
-          # Configurar app/build.gradle direcionado para Android 14 TV (API 34) sem dependências externas pesadas
+          # Configurar app/build.gradle para Android 14 TV (API 34)
           cat << 'EOF' > android/app/build.gradle
           apply plugin: 'com.android.application'
 
@@ -102,8 +102,8 @@ jobs:
                   applicationId "com.sdneysantos.launcherglass"
                   minSdk 21
                   targetSdk 34
-                  versionCode 2
-                  versionName "1.1.0"
+                  versionCode 3
+                  versionName "2.0.0"
               }
 
               buildTypes {
@@ -124,11 +124,11 @@ jobs:
           }
 
           dependencies {
-              // Zero dependências externas: usa 100% APIs nativas do Android 14 SDK para leveza máxima em 2GB RAM
+              // 100% nativo do SDK Android 14 (Zero conflito de bibliotecas e ultra leve para 2GB RAM)
           }
           EOF
 
-          # Criar AndroidManifest.xml com categorias TV Home e Leanback Launcher
+          # Criar AndroidManifest.xml com permissões de TV, Watch Next e Leanback Launcher
           cat << 'EOF' > android/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -137,6 +137,8 @@ jobs:
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
               <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
               <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+              <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
+              <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
 
               <uses-feature android:name="android.software.leanback" android:required="false" />
               <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -156,10 +158,10 @@ jobs:
                       android:screenOrientation="landscape"
                       android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize">
                       
-                      <!-- Torna a Launcher Glass 26 a Home Principal da TV -->
+                      <!-- Home Principal da Android TV -->
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.HOME" />
+                          <category android:name="android.intent.action.HOME" />
                           <category android:name="android.intent.category.DEFAULT" />
                       </intent-filter>
 
@@ -174,7 +176,7 @@ jobs:
           </manifest>
           EOF
 
-          # Criar tema nativo Fullscreen sem depender de AppCompat
+          # Criar tema nativo Fullscreen
           cat << 'EOF' > android/app/src/main/res/values/styles.xml
           <resources>
               <style name="Theme.LauncherGlass" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
@@ -198,19 +200,21 @@ jobs:
                   android:fillColor="#050711"
                   android:pathData="M0,0h108v108h-108z"/>
               <path
-                  android:fillColor="#06b6d4"
-                  android:pathData="M24,24h60v60h-60z"/>
+                  android:fillColor="#38bdf8"
+                  android:pathData="M22,22h64v64h-64z"/>
           </vector>
           EOF
 
-          # Criar MainActivity.java 100% nativa com Ponte Android TV (Abre Apps reais na TV e funciona com D-Pad)
+          # Criar MainActivity.java com integração Watch Next + Apps Instalados + Deep Links + HDMI
           cat << 'EOF' > android/app/src/main/java/com/sdneysantos/launcherglass/MainActivity.java
           package com.sdneysantos.launcherglass;
 
           import android.annotation.SuppressLint;
           import android.app.Activity;
           import android.content.Intent;
+          import android.content.pm.ApplicationInfo;
           import android.content.pm.PackageManager;
+          import android.database.Cursor;
           import android.graphics.Color;
           import android.net.Uri;
           import android.os.Bundle;
@@ -226,6 +230,9 @@ jobs:
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           import java.io.InputStream;
+          import java.util.List;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
 
           public class MainActivity extends Activity {
               private WebView webView;
@@ -233,6 +240,11 @@ jobs:
               public class AndroidTVBridge {
                   @JavascriptInterface
                   public boolean launchApp(String packageNamesCsv) {
+                      return launchDeepLink(packageNamesCsv, "");
+                  }
+
+                  @JavascriptInterface
+                  public boolean launchDeepLink(String packageNamesCsv, String deepLinkUri) {
                       if (packageNamesCsv == null || packageNamesCsv.isEmpty()) return false;
                       PackageManager pm = getPackageManager();
                       String[] packages = packageNamesCsv.split(",");
@@ -240,12 +252,29 @@ jobs:
                           String pkg = rawPkg.trim();
                           if (pkg.isEmpty()) continue;
                           try {
+                              // 1. Se tiver deepLinkUri e o pacote estiver instalado, abre o conteúdo direto no app da TV
+                              if (deepLinkUri != null && !deepLinkUri.isEmpty()) {
+                                  Intent leanbackCheck = pm.getLeanbackLaunchIntentForPackage(pkg);
+                                  Intent normalCheck = pm.getLaunchIntentForPackage(pkg);
+                                  if (leanbackCheck != null || normalCheck != null) {
+                                      try {
+                                          Intent deepIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(deepLinkUri));
+                                          deepIntent.setPackage(pkg);
+                                          deepIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                          startActivity(deepIntent);
+                                          return true;
+                                      } catch (Exception ignored) {
+                                      }
+                                  }
+                              }
+                              // 2. Abre o app nativo Android TV (Leanback)
                               Intent leanbackIntent = pm.getLeanbackLaunchIntentForPackage(pkg);
                               if (leanbackIntent != null) {
                                   leanbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                                   startActivity(leanbackIntent);
                                   return true;
                               }
+                              // 3. Fallback para intent padrão do pacote
                               Intent normalIntent = pm.getLaunchIntentForPackage(pkg);
                               if (normalIntent != null) {
                                   normalIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -256,6 +285,152 @@ jobs:
                           }
                       }
                       return false;
+                  }
+
+                  @JavascriptInterface
+                  public String getInstalledAppsJson() {
+                      JSONArray arr = new JSONArray();
+                      try {
+                          PackageManager pm = getPackageManager();
+                          List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+                          for (ApplicationInfo app : apps) {
+                              String pkg = app.packageName;
+                              if (pkg.equals(getPackageName())) continue;
+                              if (pkg.startsWith("com.android.cts") || pkg.startsWith("com.android.providers")) continue;
+                              Intent leanback = pm.getLeanbackLaunchIntentForPackage(pkg);
+                              Intent regular = pm.getLaunchIntentForPackage(pkg);
+                              boolean isSystem = (app.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+                              boolean isUpdatedSystem = (app.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
+                              boolean isThirdParty = !isSystem || isUpdatedSystem;
+                              if (leanback != null || regular != null) {
+                                  JSONObject obj = new JSONObject();
+                                  obj.put("packageName", pkg);
+                                  obj.put("label", pm.getApplicationLabel(app).toString());
+                                  obj.put("isTvApp", leanback != null);
+                                  obj.put("isThirdParty", isThirdParty);
+                                  arr.put(obj);
+                              }
+                          }
+                      } catch (Exception ignored) {
+                      }
+                      return arr.toString();
+                  }
+
+                  private void queryTvProgramsUri(Uri uri, JSONArray arr, PackageManager pm) {
+                      Cursor cursor = null;
+                      try {
+                          cursor = getContentResolver().query(uri, null, null, null, null);
+                          if (cursor != null) {
+                              int titleIdx = cursor.getColumnIndex("title");
+                              int descIdx = cursor.getColumnIndex("short_description");
+                              int epTitleIdx = cursor.getColumnIndex("episode_title");
+                              int pkgIdx = cursor.getColumnIndex("package_name");
+                              int posterIdx = cursor.getColumnIndex("poster_art_uri");
+                              int thumbIdx = cursor.getColumnIndex("thumbnail_uri");
+                              int intentIdx = cursor.getColumnIndex("intent_uri");
+                              int posIdx = cursor.getColumnIndex("last_playback_position_millis");
+                              int durIdx = cursor.getColumnIndex("duration_millis");
+                              int browsableIdx = cursor.getColumnIndex("browsable");
+
+                              while (cursor.moveToNext() && arr.length() < 12) {
+                                  if (browsableIdx >= 0 && cursor.getInt(browsableIdx) == 0) {
+                                      continue;
+                                  }
+                                  String pkg = pkgIdx >= 0 ? cursor.getString(pkgIdx) : "";
+                                  if (pkg == null || pkg.isEmpty()) continue;
+                                  // Filtrar pacotes do sistema para manter apenas apps de terceiros
+                                  if (pkg.equals(getPackageName()) || pkg.startsWith("com.android.tv.settings") || pkg.startsWith("com.google.android.tvlauncher")) {
+                                      continue;
+                                  }
+                                  String title = titleIdx >= 0 ? cursor.getString(titleIdx) : "";
+                                  if (title == null || title.trim().isEmpty()) continue;
+
+                                  boolean duplicate = false;
+                                  for (int i = 0; i < arr.length(); i++) {
+                                      JSONObject existing = arr.optJSONObject(i);
+                                      if (existing != null && title.equalsIgnoreCase(existing.optString("title")) && pkg.equals(existing.optString("packageName"))) {
+                                          duplicate = true;
+                                          break;
+                                      }
+                                  }
+                                  if (duplicate) continue;
+
+                                  String providerName = pkg;
+                                  try {
+                                      ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+                                      CharSequence label = pm.getApplicationLabel(ai);
+                                      if (label != null && label.length() > 0) {
+                                          providerName = label.toString();
+                                      }
+                                  } catch (Exception ignored) {
+                                  }
+
+                                  JSONObject obj = new JSONObject();
+                                  obj.put("title", title);
+                                  String sub = "";
+                                  if (epTitleIdx >= 0 && cursor.getString(epTitleIdx) != null) {
+                                      sub = cursor.getString(epTitleIdx);
+                                  } else if (descIdx >= 0 && cursor.getString(descIdx) != null) {
+                                      sub = cursor.getString(descIdx);
+                                  } else {
+                                      sub = "Continuar no " + providerName;
+                                  }
+                                  obj.put("subtitle", sub);
+                                  obj.put("provider", providerName);
+                                  obj.put("packageName", pkg);
+
+                                  String art = "";
+                                  if (thumbIdx >= 0 && cursor.getString(thumbIdx) != null && !cursor.getString(thumbIdx).isEmpty()) {
+                                      art = cursor.getString(thumbIdx);
+                                  } else if (posterIdx >= 0 && cursor.getString(posterIdx) != null) {
+                                      art = cursor.getString(posterIdx);
+                                  }
+                                  obj.put("posterUri", art);
+                                  if (intentIdx >= 0 && cursor.getString(intentIdx) != null) {
+                                      obj.put("intentUri", cursor.getString(intentIdx));
+                                  }
+                                  int progress = 35;
+                                  if (posIdx >= 0 && durIdx >= 0) {
+                                      long pos = cursor.getLong(posIdx);
+                                      long dur = cursor.getLong(durIdx);
+                                      if (dur > 0 && pos > 0) {
+                                          progress = Math.min(95, Math.max(5, (int) ((pos * 100) / dur)));
+                                      }
+                                  }
+                                  obj.put("progress", progress);
+                                  arr.put(obj);
+                              }
+                          }
+                      } catch (Exception ignored) {
+                      } finally {
+                          if (cursor != null) cursor.close();
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public String getWatchNextProgramsJson() {
+                      JSONArray arr = new JSONArray();
+                      try {
+                          PackageManager pm = getPackageManager();
+                          queryTvProgramsUri(Uri.parse("content://android.media.tv/watch_next_program"), arr, pm);
+                          if (arr.length() < 5) {
+                              queryTvProgramsUri(Uri.parse("content://android.media.tv/preview_program"), arr, pm);
+                          }
+                      } catch (Exception ignored) {
+                      }
+                      return arr.toString();
+                  }
+
+                  @JavascriptInterface
+                  public boolean switchHdmiInput(int hdmiPort) {
+                      try {
+                          Intent intent = new Intent("android.media.tv.action.SETUP_INPUTS");
+                          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                          startActivity(intent);
+                          return true;
+                      } catch (Exception e) {
+                          return false;
+                      }
                   }
 
                   @JavascriptInterface
@@ -401,8 +576,8 @@ jobs:
         if: startsWith(github.ref, 'refs/heads/main') || github.event_name == 'workflow_dispatch'
         with:
           tag_name: v1.0.0
-          name: "Launcher Glass 26 - v1.0.0 (Android 14 TV)"
-          body: "APK assinado e otimizado da Launcher Glass 26 para Century TV Stick com Android 14."
+          name: "Launcher Glass 26 - v2.0.0 (Android 14 TV)"
+          body: "APK assinado da Launcher Glass 26 (Visual Liquid Glass idêntico ao anexo + Integração Watch Next e Apps instalados no Android 14 TV)."
           files: output/Launcher-glass-26.apk
           overwrite: true
         env:
