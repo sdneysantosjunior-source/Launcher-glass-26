@@ -1,0 +1,6 @@
+{
+  "name": "Gemini TV Optimizer: Adeus Sistema Antigo",
+  "description": "Transforme sua Android TV ou Mi TV Stick usando Gemini AI e Termux no celular. Remova bloatwares, aumente a velocidade e instale launchers fluidos via ADB.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
