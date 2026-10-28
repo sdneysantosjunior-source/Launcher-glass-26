@@ -1595,7 +1595,15 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenSystem
                     <motion.button
                       key={app.id}
                       layout
-                      transition={dpadSpring}
+                      transition={{
+                        ...dpadSpring,
+                        boxShadow: isFocused
+                          ? { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }
+                          : { duration: 0.25 },
+                        borderColor: isFocused
+                          ? { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }
+                          : { duration: 0.25 },
+                      }}
                       animate={{
                         scale: isFocused ? 1.075 : 1,
                         y: isFocused ? -5 : 0,
@@ -1607,10 +1615,18 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenSystem
                           ? 'rgba(23, 39, 84, 0.78)'
                           : 'rgba(13, 21, 40, 0.75)',
                         borderColor: isFocused
-                          ? 'rgba(96, 165, 250, 0.98)'
+                          ? [
+                              'rgba(96, 165, 250, 0.9)',
+                              'rgba(165, 243, 252, 1)',
+                              'rgba(96, 165, 250, 0.9)',
+                            ]
                           : 'rgba(255, 255, 255, 0.2)',
                         boxShadow: isFocused
-                          ? '0 16px 36px rgba(37, 99, 235, 0.55), 0 0 30px rgba(56, 189, 248, 0.85), inset 0 1.5px 3px rgba(255, 255, 255, 0.65), inset 0 -14px 26px rgba(56, 189, 248, 0.42)'
+                          ? [
+                              '0 14px 32px rgba(37, 99, 235, 0.45), 0 0 22px rgba(56, 189, 248, 0.65), inset 0 1.5px 3px rgba(255, 255, 255, 0.6), inset 0 -12px 22px rgba(56, 189, 248, 0.35)',
+                              '0 18px 44px rgba(37, 99, 235, 0.85), 0 0 42px rgba(56, 189, 248, 1), 0 0 16px rgba(165, 243, 252, 0.8), inset 0 2px 4px rgba(255, 255, 255, 0.9), inset 0 -18px 32px rgba(56, 189, 248, 0.65)',
+                              '0 14px 32px rgba(37, 99, 235, 0.45), 0 0 22px rgba(56, 189, 248, 0.65), inset 0 1.5px 3px rgba(255, 255, 255, 0.6), inset 0 -12px 22px rgba(56, 189, 248, 0.35)',
+                            ]
                           : '0 10px 25px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.22)',
                       }}
                       whileTap={{ scale: 0.96 }}
@@ -1637,6 +1653,26 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenSystem
                         />
                       )}
 
+                      {/* Pulsating D-Pad Focus Ring Halo inside the Glass Card */}
+                      <AnimatePresence>
+                        {isFocused && (
+                          <motion.div
+                            initial={{ opacity: 0.4, scale: 0.98 }}
+                            animate={{
+                              opacity: [0.45, 0.95, 0.45],
+                              scale: [0.98, 1.02, 0.98],
+                            }}
+                            exit={{ opacity: 0 }}
+                            transition={{
+                              duration: 1.6,
+                              repeat: Infinity,
+                              ease: 'easeInOut',
+                            }}
+                            className="absolute inset-0 rounded-[22px] ring-2 ring-inset ring-cyan-300/80 shadow-[inset_0_0_20px_rgba(56,189,248,0.65)] pointer-events-none"
+                          />
+                        )}
+                      </AnimatePresence>
+
                       {/* Animated Diagonal Specular Glass Reflection responding to D-Pad focus */}
                       <motion.div
                         initial={false}
@@ -1651,15 +1687,22 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenSystem
                       {/* Top glass specular highlight */}
                       <div className="absolute top-0 left-3 right-3 h-[1px] bg-gradient-to-r from-transparent via-white/50 to-transparent pointer-events-none" />
 
-                      {/* Bottom focus neon flare */}
+                      {/* Bottom pulsating focus neon flare */}
                       <AnimatePresence>
                         {isFocused && (
                           <motion.div
                             initial={{ opacity: 0, scale: 0.6 }}
-                            animate={{ opacity: 1, scale: 1.15 }}
+                            animate={{
+                              opacity: [0.65, 1, 0.65],
+                              scale: [0.95, 1.3, 0.95],
+                            }}
                             exit={{ opacity: 0, scale: 0.6 }}
-                            transition={{ duration: 0.2 }}
-                            className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-16 h-6 bg-cyan-300/80 rounded-full blur-md pointer-events-none"
+                            transition={{
+                              duration: 1.6,
+                              repeat: Infinity,
+                              ease: 'easeInOut',
+                            }}
+                            className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-16 h-6 bg-cyan-300/85 rounded-full blur-md pointer-events-none"
                           />
                         )}
                       </AnimatePresence>
@@ -1744,14 +1787,30 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenSystem
                             ? 'blur(28px) saturate(195%)'
                             : 'blur(16px) saturate(125%)',
                           borderColor: isFocused
-                            ? 'rgba(96, 165, 250, 0.98)'
+                            ? [
+                                'rgba(96, 165, 250, 0.9)',
+                                'rgba(165, 243, 252, 1)',
+                                'rgba(96, 165, 250, 0.9)',
+                              ]
                             : 'rgba(255, 255, 255, 0.24)',
                           boxShadow: isFocused
-                            ? '0 18px 38px rgba(37, 99, 235, 0.55), 0 0 32px rgba(56, 189, 248, 0.85), inset 0 1.5px 3px rgba(255, 255, 255, 0.65)'
+                            ? [
+                                '0 16px 34px rgba(37, 99, 235, 0.45), 0 0 24px rgba(56, 189, 248, 0.65), inset 0 1.5px 3px rgba(255, 255, 255, 0.55)',
+                                '0 20px 46px rgba(37, 99, 235, 0.85), 0 0 44px rgba(56, 189, 248, 1), 0 0 18px rgba(165, 243, 252, 0.85), inset 0 2px 4px rgba(255, 255, 255, 0.85)',
+                                '0 16px 34px rgba(37, 99, 235, 0.45), 0 0 24px rgba(56, 189, 248, 0.65), inset 0 1.5px 3px rgba(255, 255, 255, 0.55)',
+                              ]
                             : '0 12px 28px rgba(0, 0, 0, 0.75), inset 0 1px 1px rgba(255, 255, 255, 0.2)',
                         }}
                         exit={{ opacity: 0, scale: 0.9, y: 8 }}
-                        transition={dpadSpring}
+                        transition={{
+                          ...dpadSpring,
+                          boxShadow: isFocused
+                            ? { duration: 1.7, repeat: Infinity, ease: 'easeInOut' }
+                            : { duration: 0.25 },
+                          borderColor: isFocused
+                            ? { duration: 1.7, repeat: Infinity, ease: 'easeInOut' }
+                            : { duration: 0.25 },
+                        }}
                         whileTap={{ scale: 0.97 }}
                         onClick={() => {
                           setFocusedId(cardId);
@@ -1791,6 +1850,26 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenSystem
                             className="absolute inset-0 bg-gradient-to-t from-blue-600/30 via-cyan-400/10 to-white/10 pointer-events-none"
                           />
                         )}
+
+                        {/* Pulsating D-Pad Glow Halo for Continue Watching Card */}
+                        <AnimatePresence>
+                          {isFocused && (
+                            <motion.div
+                              initial={{ opacity: 0.4, scale: 0.99 }}
+                              animate={{
+                                opacity: [0.4, 0.95, 0.4],
+                                scale: [0.99, 1.015, 0.99],
+                              }}
+                              exit={{ opacity: 0 }}
+                              transition={{
+                                duration: 1.7,
+                                repeat: Infinity,
+                                ease: 'easeInOut',
+                              }}
+                              className="absolute inset-0 rounded-[20px] ring-2 ring-inset ring-cyan-300/80 shadow-[inset_0_0_22px_rgba(56,189,248,0.65)] pointer-events-none"
+                            />
+                          )}
+                        </AnimatePresence>
 
                         {/* Animated Diagonal Specular Sheen on D-Pad Focus */}
                         <motion.div
@@ -1993,9 +2072,21 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenSystem
                     return (
                       <motion.button
                         key={`${app.pkg}-${idx}`}
-                        transition={dpadSpring}
+                        transition={{
+                          ...dpadSpring,
+                          boxShadow: isSelected
+                            ? { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }
+                            : { duration: 0.2 },
+                        }}
                         animate={{
                           scale: isSelected ? 1.05 : 1,
+                          boxShadow: isSelected
+                            ? [
+                                '0 0 18px rgba(59, 130, 246, 0.65), inset 0 0 12px rgba(56, 189, 248, 0.35)',
+                                '0 0 34px rgba(56, 189, 248, 0.98), inset 0 0 22px rgba(165, 243, 252, 0.65)',
+                                '0 0 18px rgba(59, 130, 246, 0.65), inset 0 0 12px rgba(56, 189, 248, 0.35)',
+                              ]
+                            : '0 0 0px rgba(0, 0, 0, 0)',
                         }}
                         onClick={() => {
                           setDrawerFocusIdx(idx);
@@ -2003,9 +2094,9 @@ export const CustomTvLauncher: React.FC<CustomTvLauncherProps> = ({ onOpenSystem
                           launchAppOrContent(app.name, app.pkg, '', undefined, app.iconSrc);
                         }}
                         onMouseEnter={() => setDrawerFocusIdx(idx)}
-                        className={`rounded-2xl p-3.5 flex flex-col items-center gap-2 cursor-pointer ${
+                        className={`rounded-2xl p-3.5 flex flex-col items-center gap-2 cursor-pointer relative overflow-hidden ${
                           isSelected
-                            ? 'bg-blue-600/35 border-2 border-[#60a5fa] shadow-[0_0_25px_rgba(59,130,246,0.85)]'
+                            ? 'bg-blue-600/35 border-2 border-[#60a5fa]'
                             : 'bg-white/[0.06] border border-white/15 hover:border-white/35'
                         }`}
                       >
