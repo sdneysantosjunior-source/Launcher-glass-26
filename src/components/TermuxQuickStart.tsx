@@ -269,15 +269,16 @@ adb shell setprop persist.sys.purgeable_assets 1`}
           </div>
         </div>
 
-        {/* Special Note for Android 11+ Pairing */}
+        {/* Special Note for Android 14 Pairing */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 text-xs text-slate-400 space-y-2">
           <div className="flex items-center gap-2 text-cyan-400 font-semibold">
             <ShieldCheck className="w-4 h-4" />
-            <span>Sua TV tem Android 11 ou 12 (Google TV) e pede código de pareamento?</span>
+            <span>Century TV Stick no Android 14 (Dica de Pareamento Sem Fio se solicitar)</span>
           </div>
           <p>
-            Vá em <em>Opções do Desenvolvedor ➔ Depuração sem fio ➔ Parear dispositivo com código de pareamento</em>.
-            No Termux, use o comando: <code className="text-slate-200 bg-slate-950 px-1 py-0.5 rounded">adb pair {tvIp}:&lt;porta-mostrada-na-tv&gt; &lt;codigo-6-digitos&gt;</code> e depois conecte normalmente.
+            No Android 14, se a TV solicitar pareamento por porta aleatória com código de 6 dígitos:
+            Vá em <em>Opções do Desenvolvedor ➔ Depuração sem fio ➔ Parear dispositivo com código</em>.
+            No Termux, use: <code className="text-slate-200 bg-black/50 px-1 py-0.5 rounded font-mono">adb pair 192.168.0.117:&lt;porta-da-tv&gt; &lt;codigo-6-digitos&gt;</code> e depois <code className="text-slate-200 bg-black/50 px-1 py-0.5 rounded font-mono">adb connect 192.168.0.117:5555</code>.
           </p>
         </div>
       </div>

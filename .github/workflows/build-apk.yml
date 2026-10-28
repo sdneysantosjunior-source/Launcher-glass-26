@@ -10,14 +10,14 @@ permissions:
 
 jobs:
   build-apk:
-    name: Construir Launcher-glass-26.apk
+    name: Construir Launcher-glass-26.apk (Android 14 TV)
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar Código Fonte
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
+      - name: Configurar Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -34,28 +34,36 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Aceitar Licenças do Android SDK (Android 14 - API 34)
+        run: |
+          mkdir -p "$ANDROID_HOME/licenses"
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
+          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> "$ANDROID_HOME/licenses/android-sdk-license"
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
 
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.5
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
 
-      - name: Gerar Projeto Android TV WebView
+      - name: Gerar Projeto Nativo Android 14 TV
         run: |
           mkdir -p android/app/src/main/java/com/sdneysantos/launcherglass
           mkdir -p android/app/src/main/res/values
           mkdir -p android/app/src/main/res/drawable
           mkdir -p android/app/src/main/assets
 
-          # Copiar a build da launcher para os assets do app Android
+          # Copiar o build do frontend para os assets do APK
           cp -r dist/* android/app/src/main/assets/
 
-          # Criar gradle root
+          # Configurar settings.gradle
           cat << 'EOF' > android/settings.gradle
           rootProject.name = 'LauncherGlass26'
           include ':app'
           EOF
 
+          # Configurar build.gradle raiz
           cat << 'EOF' > android/build.gradle
           buildscript {
               repositories {
@@ -74,7 +82,7 @@ jobs:
           }
           EOF
 
-          # Criar app/build.gradle
+          # Configurar app/build.gradle direcionado para Android 14 TV (API 34)
           cat << 'EOF' > android/app/build.gradle
           apply plugin: 'com.android.application'
 
@@ -91,13 +99,19 @@ jobs:
               }
 
               buildTypes {
+                  debug {
+                      minifyEnabled false
+                      debuggable true
+                  }
                   release {
                       minifyEnabled false
                       signingConfig signingConfigs.debug
                   }
-                  debug {
-                      minifyEnabled false
-                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
               }
           }
 
@@ -107,7 +121,7 @@ jobs:
           }
           EOF
 
-          # Criar AndroidManifest.xml com suporte oficial a Android TV e Launcher Home
+          # Criar AndroidManifest.xml com categorias TV Home e Leanback Launcher
           cat << 'EOF' > android/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -132,14 +146,14 @@ jobs:
                       android:screenOrientation="landscape"
                       android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize">
                       
-                      <!-- Torna o app a Launcher padrão (Home) da TV -->
+                      <!-- Torna a Launcher Glass 26 a Home Principal da TV -->
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.HOME" />
                           <category android:name="android.intent.category.DEFAULT" />
                       </intent-filter>
 
-                      <!-- Ícone no menu de aplicativos e Leanback Android TV -->
+                      <!-- Ícone no menu de aplicativos e Leanback Android 14 TV -->
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
@@ -150,7 +164,7 @@ jobs:
           </manifest>
           EOF
 
-          # Criar Theme full screen sem barra
+          # Criar tema Dark Fullscreen
           cat << 'EOF' > android/app/src/main/res/values/styles.xml
           <resources>
               <style name="Theme.FullScreen" parent="Theme.AppCompat.NoActionBar">
@@ -163,7 +177,7 @@ jobs:
           </resources>
           EOF
 
-          # Criar icone básico
+          # Criar ícone da Launcher
           cat << 'EOF' > android/app/src/main/res/drawable/ic_launcher.xml
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="108dp"
@@ -176,7 +190,7 @@ jobs:
           </vector>
           EOF
 
-          # Criar MainActivity.java que carrega os assets locais e mapeia o controle remoto D-pad
+          # Criar MainActivity.java otimizada para Century TV Stick (D-Pad + Android 14)
           cat << 'EOF' > android/app/src/main/java/com/sdneysantos/launcherglass/MainActivity.java
           package com.sdneysantos.launcherglass;
 
@@ -186,28 +200,34 @@ jobs:
           import android.net.Uri;
           import android.os.Bundle;
           import android.view.KeyEvent;
-          import android.view.View;
           import android.view.WindowManager;
           import android.webkit.WebChromeClient;
           import android.webkit.WebResourceRequest;
+          import android.webkit.WebResourceResponse;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
-          import android.webkit.WebViewClient;
+          import androidx.webkit.WebViewAssetLoader;
+          import androidx.webkit.WebViewClientCompat;
 
           public class MainActivity extends Activity {
               private WebView webView;
+              private WebViewAssetLoader assetLoader;
 
               @Override
               @SuppressLint("SetJavaScriptEnabled")
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
 
-                  // Tela cheia imersiva para TV
+                  // Manter tela ativa e cheia na TV
                   getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
                   getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
                   webView = new WebView(this);
                   setContentView(webView);
+
+                  assetLoader = new WebViewAssetLoader.Builder()
+                      .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+                      .build();
 
                   WebSettings settings = webView.getSettings();
                   settings.setJavaScriptEnabled(true);
@@ -218,20 +238,25 @@ jobs:
                   settings.setMediaPlaybackRequiresUserGesture(false);
                   settings.setLoadsImagesAutomatically(true);
 
-                  // Aceleração de hardware e foco do D-Pad do controle
+                  // Foco e D-Pad nativos da Century TV
                   webView.setFocusable(true);
                   webView.setFocusableInTouchMode(true);
                   webView.requestFocus();
 
-                  webView.setWebViewClient(new WebViewClient() {
+                  webView.setWebViewClient(new WebViewClientCompat() {
+                      @Override
+                      public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                          return assetLoader.shouldInterceptRequest(request.getUrl());
+                      }
+
                       @Override
                       public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                          String url = request.getUrl().toString();
-                          if (url.startsWith("file:///android_asset/")) {
+                          Uri url = request.getUrl();
+                          if (url.getHost() != null && url.getHost().equals("appassets.androidplatform.net")) {
                               return false;
                           }
                           try {
-                              Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                              Intent intent = new Intent(Intent.ACTION_VIEW, url);
                               startActivity(intent);
                               return true;
                           } catch (Exception e) {
@@ -241,47 +266,50 @@ jobs:
                   });
 
                   webView.setWebChromeClient(new WebChromeClient());
-
-                  // Carregar a Launcher Glass dos arquivos locais embutidos
-                  webView.loadUrl("file:///android_asset/index.html");
+                  webView.loadUrl("https://appassets.androidplatform.net/assets/index.html");
               }
 
               @Override
               public boolean onKeyDown(int keyCode, KeyEvent event) {
-                  // Controle remoto TV Stick
-                  if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
-                      webView.goBack();
-                      return true;
+                  if (keyCode == KeyEvent.KEYCODE_BACK) {
+                      if (webView.canGoBack()) {
+                          webView.goBack();
+                          return true;
+                      }
+                      return true; // Não fecha a Launcher ao apertar voltar na tela inicial
                   }
                   return super.onKeyDown(keyCode, event);
               }
           }
           EOF
 
-      - name: Compilar APK Android
+      - name: Compilar APK Android 14 TV (Debug Assinado)
         run: |
           cd android
-          gradle assembleRelease --no-daemon
+          gradle assembleDebug --no-daemon
 
-      - name: Renomear e Preparar APK Final
+      - name: Preparar Arquivo APK Final
         run: |
           mkdir -p output
-          cp android/app/build/outputs/apk/release/app-release-unsigned.apk output/Launcher-glass-26.apk || cp android/app/build/outputs/apk/release/*.apk output/Launcher-glass-26.apk || cp android/app/build/outputs/apk/*/*/*.apk output/Launcher-glass-26.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk output/Launcher-glass-26.apk
+          echo "APK gerado com sucesso em output/Launcher-glass-26.apk"
+          ls -lh output/Launcher-glass-26.apk
 
-      - name: Salvar APK como Artefato do GitHub
+      - name: Salvar APK como Artefato do GitHub Actions
         uses: actions/upload-artifact@v4
         with:
-          name: Launcher-glass-26
+          name: Launcher-glass-26-apk
           path: output/Launcher-glass-26.apk
           if-no-files-found: error
 
-      - name: Criar Release com o APK para Download Direto via Termux
+      - name: Criar Release no GitHub com Link Direto
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/heads/main')
+        if: startsWith(github.ref, 'refs/heads/main') || github.event_name == 'workflow_dispatch'
         with:
           tag_name: v1.0.0
-          name: "Launcher Glass 26 - v1.0.0"
-          body: "APK nativo oficial da Launcher Glass 26 para Century TV Stick (Android TV)"
+          name: "Launcher Glass 26 - v1.0.0 (Android 14 TV)"
+          body: "APK assinado e otimizado da Launcher Glass 26 para Century TV Stick com Android 14."
           files: output/Launcher-glass-26.apk
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
